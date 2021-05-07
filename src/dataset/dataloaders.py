@@ -12,7 +12,7 @@ def get_dataloaders(dataset, input_size=(32, 32), batch_size=32):
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([jitter], p=0.8),
         transforms.RandomGrayscale(p=0.2),
-        transforms.GaussianBlur(3), # May need to change depending on input size (?)
+        transforms.GaussianBlur((0.1 * input_size[0], 0.1 * input_size[1])), 
         transforms.ToTensor(),
         ])
     
