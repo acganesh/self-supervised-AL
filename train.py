@@ -1,17 +1,17 @@
 import multiprocessing
 import sys
 
+import numpy as np
 import pytorch_lightning as pl
 import sklearn
 import torch
 import torchvision
-from torch.utils.data import DataLoader
-import sklearn
+
+from data.dataloaders import ImagesDataset
+from models.model import SelfSupervisedLearner
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
-
-from models.model import SelfSupervisedLearner
-from data.dataloaders import ImagesDataset
+from torch.utils.data import DataLoader
 
 BATCH_SIZE = 256
 EPOCHS     = 1000
@@ -51,7 +51,7 @@ def main(argv):
 
         import pdb; pdb.set_trace()
     elif argv[1] == "--load":
-        torch.load(argv[2])
+        model.load_state_dict(torch.load(argv[2]))
         print("Loaded checkpoint from ", argv[2])
 
         #TODO: for some reason labels don't exist in my wget data 
