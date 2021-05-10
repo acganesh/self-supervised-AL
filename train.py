@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 
 from models.model import SelfSupervisedLearner
-from data.dataloaders import ImagesDataset
+from io.dataloaders import ImagesDataset
 
 BATCH_SIZE = 256
 EPOCHS     = 1000
