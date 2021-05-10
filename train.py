@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 
 from models.model import SelfSupervisedLearner
-from io.dataloaders import ImagesDataset
+from data.dataloaders import ImagesDataset
 
 BATCH_SIZE = 256
 EPOCHS     = 1000
@@ -35,14 +35,15 @@ def main(argv):
 
     if (argv[1] == "--train"):
         #ds = torchvision.datasets.STL10("./STL10", download=True)
-        ds = ImagesDataset("./data/unlabeled_images", IMAGE_SIZE, train=True)
+        ds = ImagesDataset("./dataset/unlabeled_images", IMAGE_SIZE, train=True)
         train_loader = DataLoader(ds, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=True)
 
         trainer = pl.Trainer(
             gpus = NUM_GPUS,
             max_epochs = 10,
             accumulate_grad_batches = 1,
-            sync_batchnorm = True
+            sync_batchnorm = True,
+            default_root_dir="./ckpt"
         )
 
         trainer.fit(model, train_loader)
