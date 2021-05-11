@@ -103,7 +103,6 @@ def main(argv):
         byol_acc = sklearn.metrics.accuracy_score(test_labels, byol_classes)
 
         import pdb; pdb.set_trace()
-
         
 
 if __name__ == '__main__':
