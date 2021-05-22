@@ -3,6 +3,7 @@ import torch
 
 from ..byol_pytorch import BYOL
 
+
 class SelfSupervisedLearner(pl.LightningModule):
     def __init__(self, net, lr, **kwargs):
         super().__init__()
@@ -22,6 +23,7 @@ class SelfSupervisedLearner(pl.LightningModule):
     def on_before_zero_grad(self, _):
         if self.learner.use_momentum:
             self.learner.update_moving_average()
+
 
 class LogisticRegression(torch.nn.Module):
     def __init__(self, input_dim, output_dim):
