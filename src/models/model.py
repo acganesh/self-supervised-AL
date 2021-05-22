@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 
-from ..byol_pytorch import BYOL
+from ..byol_pytorch.byol_pytorch import BYOL
 
 
 class SelfSupervisedLearner(pl.LightningModule):
