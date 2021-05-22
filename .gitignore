@@ -132,3 +132,5 @@ dmypy.json
 ckpt/
 dataset/
 .DS_Store
+
+*.swp

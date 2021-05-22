@@ -7,11 +7,13 @@ import sklearn
 import torch
 import torchvision
 
-from data.dataloaders import ImagesDataset
-from models.model import SelfSupervisedLearner
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from torch.utils.data import DataLoader
+
+from src.data.dataloaders import ImagesDataset
+from src.models.model import SelfSupervisedLearner
+
 
 BATCH_SIZE = 256
 EPOCHS     = 1000
