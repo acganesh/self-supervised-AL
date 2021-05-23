@@ -241,7 +241,7 @@ class BYOL(nn.Module):
         update_moving_average(self.target_ema_updater, self.target_encoder,
                               self.online_encoder)
 
-    def forward(self, x, return_embedding=False, return_projection=True):
+    def forward(self, x, return_embedding=False, return_projection=True, return_losses=False):
         if return_embedding:
             return self.online_encoder(x, return_projection=return_projection)
 
@@ -265,4 +265,8 @@ class BYOL(nn.Module):
         loss_two = loss_fn(online_pred_two, target_proj_one.detach())
 
         loss = loss_one + loss_two
+
+        if return_losses:
+            return loss
+
         return loss.mean()
