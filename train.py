@@ -24,7 +24,7 @@ NUM_WORKERS = multiprocessing.cpu_count()
 
 def main(argv):
     print("Args: ", argv)
-    resnet = torchvision.models.resnet18(pretrained=False)
+    resnet = torchvision.models.resnet50(pretrained=False)
     model = SelfSupervisedLearner(resnet,
                                   image_size=IMAGE_SIZE,
                                   hidden_layer='avgpool',
