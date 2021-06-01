@@ -15,8 +15,8 @@ config_local = {    # Data
 
 config_cluster = {
     # Data
-    'STL10_TRAIN': '/scratch/users/avento/datasets/raw_files/stl10_raw/train_imgs',
-    'STL10_TEST': '/scratch/users/avento/datasets/raw_files/stl10_raw/test_imgs',
+    'STL10_TRAIN': '/scratch/users/avento/datasets/raw_files/stl10_raw',
+    'STL10_TEST': '/scratch/users/avento/datasets/raw_files/stl10_raw',
     'SVHN_EXTRA': '/scratch/users/avento/datasets/raw_files/svhn_raw/extra_imgs',
     'SVHN_TEST': '/scratch/users/avento/datasets/raw_files/svhn_raw/test_imgs',
     'BIASED_CIFAR10_TRAIN': '/scratch/users/avento/datasets/biased_cifar10/fine_tune_images',
