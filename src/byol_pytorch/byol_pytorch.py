@@ -241,7 +241,8 @@ class BYOL(nn.Module):
         update_moving_average(self.target_ema_updater, self.target_encoder,
                               self.online_encoder)
 
-    def forward(self, x, return_embedding=False, return_projection=True, return_losses=False):
+    def forward(self, x, return_embedding=False, return_projection=True, return_losses=False, return_losses_and_embeddings=False):
+
         if return_embedding:
             return self.online_encoder(x, return_projection=return_projection)
 
@@ -268,5 +269,10 @@ class BYOL(nn.Module):
 
         if return_losses:
             return loss
+
+        # This is a hack :(.  Needed for grad based ranking.
+        if return_losses_and_embeddings:
+            proj, embedding = self.online_encoder(x, return_projection=return_projection)
+            return proj, embedding, loss
 
         return loss.mean()
