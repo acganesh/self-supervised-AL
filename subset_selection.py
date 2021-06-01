@@ -186,9 +186,11 @@ def rand_sample(data_dict, features_dict):
     rand_acc = sklearn.metrics.accuracy_score(test_labels, rand_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[random_idx], start_dim=1), train_labels_subset)
+    lr_baseline.fit(torch.flatten(train_imgs[random_idx], start_dim=1),
+                    train_labels_subset)
 
-    lr_baseline_preds = lr_baseline.predict(torch.flatten(test_imgs, start_dim=1))
+    lr_baseline_preds = lr_baseline.predict(
+        torch.flatten(test_imgs, start_dim=1))
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
 
@@ -237,9 +239,11 @@ def kmeans_sample(data_dict, features_dict):
     km_acc = sklearn.metrics.accuracy_score(test_labels, km_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[kmeans_idx], start_dim=1), train_labels_subset)
+    lr_baseline.fit(torch.flatten(train_imgs[kmeans_idx], start_dim=1),
+                    train_labels_subset)
 
-    lr_baseline_preds = lr_baseline.predict(torch.flatten(test_imgs, start_dim=1))
+    lr_baseline_preds = lr_baseline.predict(
+        torch.flatten(test_imgs, start_dim=1))
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
 
@@ -249,15 +253,25 @@ def kmeans_sample(data_dict, features_dict):
     return km_acc, lr_baseline_acc
 
 
-def loss_based_ranking(model, data_dict, features_dict, n_examples, mode='mean'):
+def loss_based_ranking(model,
+                       data_dict,
+                       n_examples,
+                       mode='mean'):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
-    # patched BYOL lib to return losses directly
-    losses = model.learner.forward(train_imgs[0], return_losses=True)
+    losses_all = []
 
-    means = np.mean(losses)
-    stds = np.std(losses)
+    for i in range(0, train_imgs.shape[0], BATCH_SIZE):
+        batch = train_imgs[i:i+BATCH_SIZE]
+        # patched BYOL lib to return losses directly
+        losses = model.learner.forward(batch, return_losses=True)
+        losses_all.append(losses.detach().numpy())
+
+    losses_all = np.concatenate(losses_all)
+
+    means = np.mean(losses_all)
+    stds = np.std(losses_all)
 
     if mode == 'mean':
         idx = np.argsort(means)
@@ -272,6 +286,7 @@ def loss_based_ranking(model, data_dict, features_dict, n_examples, mode='mean')
 
     return train_imgs_subset, train_labels_subset
 
+
 def main():
     # TODO: convert to flag
     ckpt_path = './ckpt/learner_0510_v100.pt'
@@ -280,7 +295,10 @@ def main():
     features_dict = featurize_data(model, data_dict)
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
-    loss_based_ranking(model, data_dict, features_dict, n_examples=10, mode='mean')
+    loss_based_ranking(model,
+                       data_dict,
+                       n_examples=10,
+                       mode='mean')
 
 
 if __name__ == '__main__':
