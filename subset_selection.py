@@ -1,4 +1,5 @@
 import multiprocessing
+import random
 import sys
 
 import numpy as np
@@ -9,6 +10,7 @@ import torchvision
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
 from torch.utils.data import DataLoader
 
 from collections import Counter
@@ -184,9 +186,9 @@ def rand_sample(data_dict, features_dict):
     rand_acc = sklearn.metrics.accuracy_score(test_labels, rand_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(train_imgs[random_idx], train_labels_subset)
+    lr_baseline.fit(torch.flatten(train_imgs[random_idx], start_dim=1), train_labels_subset)
 
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
+    lr_baseline_preds = lr_baseline.predict(torch.flatten(test_imgs, start_dim=1))
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
 
@@ -235,9 +237,9 @@ def kmeans_sample(data_dict, features_dict):
     km_acc = sklearn.metrics.accuracy_score(test_labels, km_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(train_imgs[kmeans_idx], train_labels_subset)
+    lr_baseline.fit(torch.flatten(train_imgs[kmeans_idx], start_dim=1), train_labels_subset)
 
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
+    lr_baseline_preds = lr_baseline.predict(torch.flatten(test_imgs, start_dim=1))
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
 
@@ -252,7 +254,7 @@ def loss_based_ranking(model, data_dict, features_dict, n_examples, mode='mean')
     train_labels = data_dict['train_labels']
 
     # patched BYOL lib to return losses directly
-    losses = model.learner.forward(train_imgs, return_losses=True)
+    losses = model.learner.forward(train_imgs[0], return_losses=True)
 
     means = np.mean(losses)
     stds = np.std(losses)
@@ -278,7 +280,7 @@ def main():
     features_dict = featurize_data(model, data_dict)
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
-    loss_based_ranking(model, data_dict, features_dict)
+    loss_based_ranking(model, data_dict, features_dict, n_examples=10, mode='mean')
 
 
 if __name__ == '__main__':
