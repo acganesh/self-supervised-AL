@@ -38,7 +38,7 @@ def load_config():
 
 
 C = load_config()
-
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def to_data_dict(train_imgs, train_labels, test_imgs, test_labels):
     data_dict = {
@@ -80,10 +80,7 @@ def init_model(ckpt_path):
                                   lr=LR)
     model.load_state_dict(torch.load(ckpt_path))
 
-    if torch.cuda.is_available():
-        model.to('cuda')
-    else:
-        model.to('cpu')
+    model = model.to(DEVICE)
     print(f"Loaded checkpoint from {ckpt_path}")
     return model
 
@@ -136,10 +133,10 @@ def init_data(ds_type='STL10'):
         #train_dataset = torchvision.datasets.CIFAR10(C['BIASED_CIFAR10_TRAIN'],)
         ImageDataset
 
-    data_dict = to_data_dict(train_imgs=train_imgs,
-                             train_labels=train_labels,
-                             test_imgs=test_imgs,
-                             test_labels=test_labels)
+    data_dict = to_data_dict(train_imgs=train_imgs.to(DEVICE),
+                             train_labels=train_labels.to(DEVICE),
+                             test_imgs=test_imgs.to(DEVICE),
+                             test_labels=test_labels.to(DEVICE))
 
     print("Dataset initialized")
     return data_dict
@@ -375,32 +372,37 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     model.zero_grad()
 
     # Select
-    idx = np.argsort(-train_grads)
+    idx = np.argsort(-train_norms)
 
     subset = idx[:n_examples]
     train_imgs_subset_norm = train_imgs[subset]
     train_labels_subset_norm = train_labels[subset]
 
     # Angle selection
-    angles = np.zeros(train_imgs.shape[0])
-    mean_grad = np.mean(train_grads, axis=0)
-    v_1 = mean_grad / np.linalg.norm(mean_grad)
+    # angles = np.zeros(train_imgs.shape[0])
+    # mean_grad = np.mean(train_grads, axis=0)
+    # v_1 = mean_grad / np.linalg.norm(mean_grad)
 
-    for index in range(train_imgs.shape[0]):
-        v_2 = train_grads[index] / np.linalg.norm(train_grads[index])
-        angles[index] = np.arccos(np.dot(v_1, v_2))
+    # for index in range(train_imgs.shape[0]):
+    #     v_2 = train_grads[index] / np.linalg.norm(train_grads[index])
+    #     angles[index] = np.arccos(np.dot(v_1, v_2))
 
-    idx = np.argsort(-angles)
-    subset = idx[:n_examples]
-    train_imgs_subset_angles = train_imgs[subset]
-    train_labels_subset_angles = train_labels[subset]
+    # idx = np.argsort(-angles)
+    # subset = idx[:n_examples]
+    # train_imgs_subset_angles = train_imgs[subset]
+    # train_labels_subset_angles = train_labels[subset]
+    train_imgs_subset_angles = None
+    train_labels_subset_angles = None
+
 
     return train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles
 
 
 def linear_eval(data_dict, features_dict, train_idx):
     train_imgs = data_dict['train_imgs']
+    train_labels = data_dict['train_labels']
     test_imgs = data_dict['test_imgs']
+    test_labels = data_dict['test_labels']
 
     train_embeddings = data_dict['train_embeddings']
     test_embeddings = data_dict['test_embeddings']
@@ -420,7 +422,7 @@ def linear_eval(data_dict, features_dict, train_idx):
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
 
     print("LR baseline acc: ", lr_baseline_acc)
-    print("LR BYOL acc: ", ly_byol_acc)
+    print("LR BYOL acc: ", lr_byol_acc)
 
 
 def main():
