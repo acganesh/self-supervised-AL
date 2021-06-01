@@ -1,4 +1,5 @@
 import multiprocessing
+import os
 import random
 import sys
 
@@ -320,7 +321,6 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     train_projs = features_dict['train_projs']
 
     model.eval()
-    #losses = model.learner.forward(train_imgs, return_losses=True)
 
     train_imgs = train_imgs[:100]
 
@@ -348,11 +348,11 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     import pdb; pdb.set_trace()
 
     # Select
-    idx = np.argsort(train_grads)
+    idx = np.argsort(-train_grads)
+
     subset = idx[:n_examples]
     train_imgs_subset_norm = train_imgs[subset]
     train_labels_subset_norm = train_labels[subset]
-    del train_norms
 
     # Angle selection
     angles = np.zeros(train_imgs.shape[0])
@@ -363,7 +363,7 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
         v_2 = train_grads[index] / np.linalg.norm(train_grads[index])
         angles[index] = np.arccos(np.dot(v_1, v_2))
 
-    idx = np.argsort(angles)
+    idx = np.argsort(-angles)
     subset = idx[:n_examples]
     train_imgs_subset_angles = train_imgs[subset]
     train_labels_subset_angles = train_labels[subset]
@@ -396,6 +396,12 @@ def main():
     # TODO: convert to flag
     ckpt_path = C['STL10_WEIGHTS']
     model = init_model(ckpt_path=ckpt_path)
+
+    if torch.cuda.is_available():
+        model.to('cuda')
+    else:
+        model.to('cpu')
+
     data_dict = init_data()
     features_dict = featurize_data(model, data_dict)
     rand_sample(data_dict, features_dict)
