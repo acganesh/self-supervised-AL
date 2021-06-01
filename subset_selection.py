@@ -98,6 +98,10 @@ def init_data(ds_type='STL10'):
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
         train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
 
         test_dataset = torchvision.datasets.STL10(C['STL10_TEST'],
                                                   split='test',
@@ -108,6 +112,10 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
         test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
 
     elif ds_type == 'SVHN':
         train_dataset = torchvision.datasets.SVHN(C['SVHN_EXTRA'],
@@ -133,25 +141,37 @@ def init_data(ds_type='STL10'):
         #train_dataset = torchvision.datasets.CIFAR10(C['BIASED_CIFAR10_TRAIN'],)
         ImageDataset
 
-    data_dict = to_data_dict(train_imgs=train_imgs.to(DEVICE),
-                             train_labels=train_labels.to(DEVICE),
-                             test_imgs=test_imgs.to(DEVICE),
-                             test_labels=test_labels.to(DEVICE))
+    data_dict = to_data_dict(train_imgs=train_imgs,
+                             train_labels=train_labels,
+                             test_imgs=test_imgs,
+                             test_labels=test_labels)
+    loader_dict = {"train_loader": train_loader, "test_loader": test_loader}
 
     print("Dataset initialized")
-    return data_dict
+    return data_dict, loader_dict
 
 
-def featurize_data(model, data_dict):
+def featurize_data(model, data_dict, loader_dict):
     D = data_dict
     train_imgs = torch.flatten(D['train_imgs'], start_dim=1)
     test_imgs = torch.flatten(D['test_imgs'], start_dim=1)
 
+    
     pca = PCA(n_components=512)
-    train_projs, train_embeddings = model.learner.forward(
-        D['train_imgs'], return_embedding=True)
-    test_projs, test_embeddings = model.learner.forward(D['test_imgs'],
-                                                        return_embedding=True)
+    train_projs, test_projs = [], []
+    train_embeddings, test_embeddings = [], []
+    for train_img, train_label in loader_dict["train_loader"]:
+        img = train_img.to(DEVICE)
+        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        train_projs.append(cur_projs)
+        train_embeddings.append(cur_embeddings)
+        
+    import pdb; pdb.set_trace()
+    for test_img, test_label in loader_dict["train_loader"]:
+        img = test_img.to(DEVICE)
+        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        test_projs.append(cur_projs)
+        test_embeddings.append(cur_embeddings)
 
     train_imgs_pca = pca.fit_transform(
         torch.flatten(D['train_imgs'], start_dim=1))
@@ -437,8 +457,8 @@ def main():
         with open("cache/features_dict.pkl", 'rb') as f:
             features_dict = pickle.load(f)
     else:
-        data_dict = init_data()
-        features_dict = featurize_data(model, data_dict)
+        data_dict, loader_dict = init_data()
+        features_dict = featurize_data(model, data_dict, loader_dict)
 
     print("Data and features loaded!")
 
