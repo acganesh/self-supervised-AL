@@ -165,13 +165,16 @@ def featurize_data(model, data_dict, loader_dict):
         cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
         train_projs.append(cur_projs)
         train_embeddings.append(cur_embeddings)
-        
-    import pdb; pdb.set_trace()
+    train_embeddings = torch.cat(train_embeddings, dim=0)
+    train_projs = torch.cat(train_projs, dim=0)
+
     for test_img, test_label in loader_dict["train_loader"]:
         img = test_img.to(DEVICE)
         cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
         test_projs.append(cur_projs)
         test_embeddings.append(cur_embeddings)
+    test_embeddings = torch.cat(test_embeddings, dim=0)
+    test_projs = torch.cat(test_projs, dim=0)
 
     train_imgs_pca = pca.fit_transform(
         torch.flatten(D['train_imgs'], start_dim=1))
