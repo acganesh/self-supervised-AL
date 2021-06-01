@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans
 from torch.utils.data import DataLoader
 
 from collections import Counter
+from tqdm import tqdm
 
 from src.data.dataloaders import ImagesDataset
 from src.models.model import SelfSupervisedLearner
@@ -150,7 +151,7 @@ def init_data(ds_type='STL10'):
     print("Dataset initialized")
     return data_dict, loader_dict
 
-
+@torch.no_grad()
 def featurize_data(model, data_dict, loader_dict):
     D = data_dict
     train_imgs = torch.flatten(D['train_imgs'], start_dim=1)
@@ -168,7 +169,7 @@ def featurize_data(model, data_dict, loader_dict):
     train_embeddings = torch.cat(train_embeddings, dim=0)
     train_projs = torch.cat(train_projs, dim=0)
 
-    for test_img, test_label in loader_dict["train_loader"]:
+    for test_img, test_label in loader_dict["test_loader"]:
         img = test_img.to(DEVICE)
         cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
         test_projs.append(cur_projs)
@@ -222,13 +223,13 @@ def rand_sample(data_dict, features_dict):
 
     random_idx = np.random.randint(0, high=train_imgs.shape[0], size=30)
 
-    embeddings_subset = train_embeddings.detach().numpy()[random_idx]
+    embeddings_subset = train_embeddings.detach().cpu().numpy()[random_idx]
     train_labels_subset = train_labels[random_idx]
 
     lr_rand = LogisticRegression(max_iter=100000)
     lr_rand.fit(embeddings_subset, train_labels_subset)
 
-    rand_preds = lr_rand.predict(test_embeddings.detach().numpy())
+    rand_preds = lr_rand.predict(test_embeddings.detach().cpu().numpy())
     rand_acc = sklearn.metrics.accuracy_score(test_labels, rand_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
@@ -257,12 +258,12 @@ def kmeans_sample(data_dict, features_dict):
     test_embeddings = features_dict['test_embeddings']
 
     km = KMeans(n_clusters=10, max_iter=100000)
-    km.fit(train_embeddings.detach().numpy())
+    km.fit(train_embeddings.detach().cpu().numpy())
 
     clusters = km.labels_
 
     counts = Counter(clusters)
-    total = train_embeddings.detach().numpy().shape[0]
+    total = train_embeddings.detach().cpu().numpy().shape[0]
 
     weights = {}
     uniform_prob = 0.1
@@ -275,13 +276,13 @@ def kmeans_sample(data_dict, features_dict):
                                 weights=weights_full,
                                 k=30)
 
-    embeddings_subset = train_embeddings.detach().numpy()[kmeans_idx]
+    embeddings_subset = train_embeddings.detach().cpu().numpy()[kmeans_idx]
     train_labels_subset = train_labels[kmeans_idx]
 
     lr_km = LogisticRegression(max_iter=100000)
     lr_km.fit(embeddings_subset, train_labels_subset)
 
-    km_preds = lr_km.predict(test_embeddings.detach().numpy())
+    km_preds = lr_km.predict(test_embeddings.detach().cpu().numpy())
     km_acc = sklearn.metrics.accuracy_score(test_labels, km_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
@@ -298,9 +299,10 @@ def kmeans_sample(data_dict, features_dict):
 
     return km_acc, lr_baseline_acc
 
-
+@torch.no_grad()
 def loss_based_ranking(model,
                        data_dict,
+                       loader_dict,
                        n_examples,
                        num_forward_pass=5,
                        mode='mean'):
@@ -315,15 +317,17 @@ def loss_based_ranking(model,
     for n in range(num_forward_pass):
         losses_all = []
 
-        for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-            batch = train_imgs[i:i + BATCH_SIZE]
-            # patched BYOL lib to return losses directly
-            losses = model.learner.forward(batch, return_losses=True)
-            losses_all.append(losses.detach().numpy())
-
+#         for i in range(0, train_imgs.shape[0], BATCH_SIZE):
+#             batch = train_imgs[i:i + BATCH_SIZE]
+#             # patched BYOL lib to return losses directly
+#             losses = model.learner.forward(batch, return_losses=True)
+#             losses_all.append(losses.detach().numpy())
+        for train_img, train_label in loader_dict["train_loader"]:
+            img = train_img.to(DEVICE)
+            losses = model.learner.forward(img, return_losses=True)
+            losses_all.append(losses.detach().cpu().numpy())
+                
         losses_all = np.concatenate(losses_all)
-
-        loss_history[i] = losses_all  # Storing for inspection
 
         loss_sum += losses_all
         loss_sum_squared += np.square(losses_all)
@@ -349,7 +353,7 @@ def loss_based_ranking(model,
     return train_imgs_subset, train_labels_subset
 
 
-def grad_based_ranking(model, data_dict, features_dict, n_examples):
+def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
@@ -358,39 +362,29 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
 
     # Global img index
     j = 0
-
-    for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-        batch = train_imgs[i:i + BATCH_SIZE]
-
-        model.train()
-        proj, embedding, losses = model.learner.forward(
-            batch,
-            return_embedding=False,
-            return_projection=False,
-            return_losses=False,
-            return_losses_and_embeddings=True)
-
-        """
-        grads = {}
-        def save_grad(name):
-            def hook(grad):
-                grads[name] = grad
-            return hook
-
-        embedding.register_hook(save_grad('embedding'))
-        """
-
-        for k, loss in enumerate(losses):
+    
+    model.eval()
+    pbar = tqdm(total=train_embeddings.shape[0])
+    for train_img, train_label in loader_dict["train_loader"]:
+        img = train_img.to(DEVICE)
+        for cur_img in range(img.shape[0]):
             model.zero_grad()
+            proj, embedding, loss = model.learner.forward(
+                img[cur_img].unsqueeze(0),
+                return_embedding=False,
+                return_projection=False,
+                return_losses=False,
+                return_losses_and_embeddings=True)
             loss.backward()
             for param in model.parameters():
                 if param.grad is not None:
                     train_norms[j] += torch.sum(torch.square(param.grad))
             train_norms[j] = np.sqrt(train_norms[j])
-            # TODO: we can revisit this if time permits
-            #train_grads[j] = embedding[k].grad
             j += 1
-
+            pbar.update(1)
+           
+    pbar.close()
+    
     # Ensure it is zeroed
     model.zero_grad()
 
@@ -470,13 +464,12 @@ def main():
     train_imgs_subset, train_labels_subset = loss_based_ranking(
         model,
         data_dict,
-        features_dict,
+        loader_dict,
         n_examples=10,
         num_forward_pass=5,
         mode='mean')
     
-    import pdb; pdb.set_trace()
-    grad_based_ranking(model, data_dict, features_dict, n_examples=10)
+    grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
 
 
 if __name__ == '__main__':
