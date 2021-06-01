@@ -440,7 +440,6 @@ def main():
 
     print("Data and features loaded!")
 
-    """
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
@@ -450,7 +449,8 @@ def main():
         n_examples=10,
         num_forward_pass=5,
         mode='mean')
-    """
+    
+    import pdb; pdb.set_trace()
     grad_based_ranking(model, data_dict, features_dict, n_examples=10)
 
 
