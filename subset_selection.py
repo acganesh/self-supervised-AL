@@ -28,13 +28,16 @@ IMAGE_SIZE = 96  # Change this depending on dataset
 NUM_GPUS = 0  # Change this depending on host
 NUM_WORKERS = multiprocessing.cpu_count()
 
+
 def load_config():
     if os.environ.get('USER') == 'acganesh':
         return config_local
     else:
         return config_cluster
 
+
 C = load_config()
+
 
 def to_data_dict(train_imgs, train_labels, test_imgs, test_labels):
     data_dict = {
@@ -57,6 +60,7 @@ def to_features_dict(train_imgs_pca, test_imgs_pca, train_projs, test_projs,
         'test_embeddings': test_embeddings
     }
     return data_dict
+
 
 def get_ckpt_path(model_type):
     assert model_type in C.keys()
@@ -82,11 +86,10 @@ def init_data(ds_type='STL10'):
     data_transforms = torchvision.transforms.Compose(
         [torchvision.transforms.ToTensor()])
     if ds_type == 'STL10':
-        train_dataset = torchvision.datasets.STL10(
-            C['STL10_TRAIN'],
-            split='train',
-            download=False,
-            transform=data_transforms)
+        train_dataset = torchvision.datasets.STL10(C['STL10_TRAIN'],
+                                                   split='train',
+                                                   download=False,
+                                                   transform=data_transforms)
         train_loader = DataLoader(train_dataset,
                                   batch_size=5000,
                                   num_workers=NUM_WORKERS,
@@ -284,14 +287,14 @@ def loss_based_ranking(model,
         losses_all = []
 
         for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-            batch = train_imgs[i:i+BATCH_SIZE]
+            batch = train_imgs[i:i + BATCH_SIZE]
             # patched BYOL lib to return losses directly
             losses = model.learner.forward(batch, return_losses=True)
             losses_all.append(losses.detach().numpy())
 
         losses_all = np.concatenate(losses_all)
 
-        loss_history[i] = losses_all # Storing for inspection
+        loss_history[i] = losses_all  # Storing for inspection
 
         loss_sum += losses_all
         loss_sum_squared += np.square(losses_all)
@@ -299,7 +302,8 @@ def loss_based_ranking(model,
         print(f"Progress: {n+1}/{num_forward_pass} forward passes complete")
 
     loss_means = loss_sum / num_forward_pass
-    loss_stds = np.sqrt(loss_sum_squared / num_forward_pass - np.square(loss_means))
+    loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
+                        np.square(loss_means))
 
     if mode == 'mean':
         # Argsort of -array sorts in descending order,
@@ -314,6 +318,7 @@ def loss_based_ranking(model,
     train_labels_subset = train_labels[subset]
 
     return train_imgs_subset, train_labels_subset
+
 
 def grad_based_ranking(model, data_dict, features_dict, n_examples):
     train_imgs = data_dict['train_imgs']
@@ -330,8 +335,13 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     j = 0
 
     for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-        batch = train_imgs[i:i+BATCH_SIZE]
-        proj, embedding, losses = model.learner.forward(batch, return_embedding=False, return_projection=False, return_losses=False, return_losses_and_embeddings=True)
+        batch = train_imgs[i:i + BATCH_SIZE]
+        proj, embedding, losses = model.learner.forward(
+            batch,
+            return_embedding=False,
+            return_projection=False,
+            return_losses=False,
+            return_losses_and_embeddings=True)
 
         for loss in losses:
             model.zero_grad()
@@ -345,7 +355,8 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     # Ensure it is zeroed
     model.zero_grad()
 
-    import pdb; pdb.set_trace()
+    import pdb
+    pdb.set_trace()
 
     # Select
     idx = np.argsort(-train_grads)
@@ -370,6 +381,7 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
 
     return train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles
 
+
 def linear_eval(data_dict, features_dict, train_idx):
     train_imgs = data_dict['train_imgs']
     test_imgs = data_dict['test_imgs']
@@ -377,13 +389,15 @@ def linear_eval(data_dict, features_dict, train_idx):
     train_embeddings = data_dict['train_embeddings']
     test_embeddings = data_dict['test_embeddings']
 
-    lr_baseline = LogisticRegression(max_iter = 100000)
-    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1), train_labels[train_idx])
+    lr_baseline = LogisticRegression(max_iter=100000)
+    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
+                    train_labels[train_idx])
 
     lr_baseline_preds = lr_baseline.predict(test_imgs)
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels, lr_baseline_preds)
+    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
+                                                     lr_baseline_preds)
 
-    lr_byol = LogisticRegression(max_iter = 100000)
+    lr_byol = LogisticRegression(max_iter=100000)
     lr_byol.fit(train_embeddings[train_idx])
 
     lr_byol_preds = lr_byol.predict(test_imgs)
@@ -391,6 +405,7 @@ def linear_eval(data_dict, features_dict, train_idx):
 
     print("LR baseline acc: ", lr_baseline_acc)
     print("LR BYOL acc: ", ly_byol_acc)
+
 
 def main():
     # TODO: convert to flag
@@ -406,14 +421,17 @@ def main():
     features_dict = featurize_data(model, data_dict)
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
-    train_imgs_subset, train_labels_subset = loss_based_ranking(model,
-                       data_dict,
-                       features_dict,
-                       n_examples=10,
-                       num_forward_pass=5,
-                       mode='mean')
-    import pdb; pdb.set_trace()
+    train_imgs_subset, train_labels_subset = loss_based_ranking(
+        model,
+        data_dict,
+        features_dict,
+        n_examples=10,
+        num_forward_pass=5,
+        mode='mean')
+    import pdb
+    pdb.set_trace()
     grad_based_ranking(model, data_dict, features_dict, n_examples)
+
 
 if __name__ == '__main__':
     main()

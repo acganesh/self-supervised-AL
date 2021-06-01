@@ -10,10 +10,9 @@ config_local = {
 
     # Checkpoints
     'STL10_WEIGHTS': './ckpt/learner_0510_v100.pt',
-    'SVHN_WEIGHTS': None, # populate
+    'SVHN_WEIGHTS': None,  # populate
     'CIFAR10_WEIGHTS': None,
 }
 
 # TODO: fill in
-config_cluster = {
-}
+config_cluster = {}
