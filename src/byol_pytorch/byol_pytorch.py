@@ -272,7 +272,7 @@ class BYOL(nn.Module):
 
         # This is a hack :(.  Needed for grad based ranking.
         if return_losses_and_embeddings:
-            proj, embedding = self.online_encoder(x, return_projection=return_projection)
+            proj, embedding = self.online_encoder(x, return_projection=True)
             return proj, embedding, loss
 
         return loss.mean()

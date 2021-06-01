@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import pickle
 import random
 import sys
 
@@ -78,6 +79,11 @@ def init_model(ckpt_path):
                                   moving_average_decay=0.99,
                                   lr=LR)
     model.load_state_dict(torch.load(ckpt_path))
+
+    if torch.cuda.is_available():
+        model.to('cuda')
+    else:
+        model.to('cpu')
     print(f"Loaded checkpoint from {ckpt_path}")
     return model
 
@@ -126,6 +132,9 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
         test_imgs, test_labels = next(iter(test_loader))
+    elif ds_type == 'CIFAR10':
+        #train_dataset = torchvision.datasets.CIFAR10(C['BIASED_CIFAR10_TRAIN'],)
+        ImageDataset
 
     data_dict = to_data_dict(train_imgs=train_imgs,
                              train_labels=train_labels,
@@ -323,19 +332,17 @@ def loss_based_ranking(model,
 def grad_based_ranking(model, data_dict, features_dict, n_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
-    train_projs = features_dict['train_projs']
-
-    model.eval()
-
-    train_imgs = train_imgs[:100]
+    train_embeddings = features_dict['train_embeddings']
 
     train_norms = np.zeros(train_imgs.shape[0])
-    train_grads = np.zeros(train_projs.shape)
 
+    # Global img index
     j = 0
 
     for i in range(0, train_imgs.shape[0], BATCH_SIZE):
         batch = train_imgs[i:i + BATCH_SIZE]
+
+        model.train()
         proj, embedding, losses = model.learner.forward(
             batch,
             return_embedding=False,
@@ -343,20 +350,29 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
             return_losses=False,
             return_losses_and_embeddings=True)
 
-        for loss in losses:
+        """
+        grads = {}
+        def save_grad(name):
+            def hook(grad):
+                grads[name] = grad
+            return hook
+
+        embedding.register_hook(save_grad('embedding'))
+        """
+
+        for k, loss in enumerate(losses):
             model.zero_grad()
             loss.backward()
-            for param in model.params():
+            for param in model.parameters():
                 if param.grad is not None:
                     train_norms[j] += torch.sum(torch.square(param.grad))
-                train_norms[j] = np.sqrt(train_norms[j])
-                train_grads[index] = embedding.grad
+            train_norms[j] = np.sqrt(train_norms[j])
+            # TODO: we can revisit this if time permits
+            #train_grads[j] = embedding[k].grad
+            j += 1
 
     # Ensure it is zeroed
     model.zero_grad()
-
-    import pdb
-    pdb.set_trace()
 
     # Select
     idx = np.argsort(-train_grads)
@@ -412,13 +428,19 @@ def main():
     ckpt_path = C['STL10_WEIGHTS']
     model = init_model(ckpt_path=ckpt_path)
 
-    if torch.cuda.is_available():
-        model.to('cuda')
+    if os.environ.get('USER') == 'acganesh':
+        with open("cache/data_dict.pkl", 'rb') as f:
+            data_dict = pickle.load(f)
+        
+        with open("cache/features_dict.pkl", 'rb') as f:
+            features_dict = pickle.load(f)
     else:
-        model.to('cpu')
+        data_dict = init_data()
+        features_dict = featurize_data(model, data_dict)
 
-    data_dict = init_data()
-    features_dict = featurize_data(model, data_dict)
+    print("Data and features loaded!")
+
+    """
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
@@ -428,9 +450,8 @@ def main():
         n_examples=10,
         num_forward_pass=5,
         mode='mean')
-    import pdb
-    pdb.set_trace()
-    grad_based_ranking(model, data_dict, features_dict, n_examples)
+    """
+    grad_based_ranking(model, data_dict, features_dict, n_examples=10)
 
 
 if __name__ == '__main__':
