@@ -10,6 +10,9 @@ import sklearn
 import torch
 import torchvision
 
+from PIL import Image
+from pathlib import Path
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -23,12 +26,34 @@ from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
-BATCH_SIZE = 256
-EPOCHS = 1000
+DATASET = "SVHN" # or "STL10" or "SVHN" or "CIFAR10"
 LR = 3e-4
-IMAGE_SIZE = 96  # Change this depending on dataset
-NUM_GPUS = 0  # Change this depending on host
-NUM_WORKERS = multiprocessing.cpu_count()
+NUM_WORKERS = multiprocessing.cpu_count() if multiprocessing.cpu_count() < 3 else 3
+IMAGE_SIZE = None # will be populated
+
+class ImagePathDataset(torch.utils.data.Dataset):
+    def __init__(self, folder):
+        super().__init__()
+        self.folder = folder
+        self.paths = []
+        self.labels = []
+
+        for path in Path(f'{folder}').glob('**/*'):
+            _, ext = os.path.splitext(path)
+            if ext.lower() in ['.jpg', '.png', '.jpeg']:
+                self.paths.append(path)
+                self.labels.append(int(str(path)[-5]))
+        
+        self.transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, index):
+        path = self.paths[index]
+        img = Image.open(path)
+        img = img.convert('RGB')
+        return self.transform(img), self.labels[index]
 
 
 def load_config():
@@ -69,20 +94,44 @@ def get_ckpt_path(model_type):
     return C['model_type']
 
 
-# TODO: index the checkpoints by key
-def init_model(ckpt_path):
+def init_model(ds_type='STL10'):
     resnet = torchvision.models.resnet18(pretrained=False)
-    model = SelfSupervisedLearner(resnet,
-                                  image_size=IMAGE_SIZE,
-                                  hidden_layer='avgpool',
-                                  projection_size=256,
-                                  projection_hidden_size=4096,
-                                  moving_average_decay=0.99,
-                                  lr=LR)
-    model.load_state_dict(torch.load(ckpt_path))
-
+    if ds_type == 'STL10':
+        IMAGE_SIZE= 96
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['STL10_WEIGHTS']))
+    elif ds_type == 'SVHN':
+        IMAGE_SIZE= 32
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['SVHN_WEIGHTS']))
+    elif ds_type == 'CIFAR10':
+        IMAGE_SIZE= 32
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['CIFAR10_WEIGHTS']))
+                                   
     model = model.to(DEVICE)
-    print(f"Loaded checkpoint from {ckpt_path}")
+    print(f"Loaded checkpoint!")
     return model
 
 
@@ -123,11 +172,16 @@ def init_data(ds_type='STL10'):
                                                   split='extra',
                                                   download=False,
                                                   transform=data_transforms)
+        train_dataset = torch.utils.data.Subset(train_dataset, np.arange(50000))
         train_loader = DataLoader(train_dataset,
-                                  batchsize=100000,
+                                  batch_size=50000,
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
         train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
 
         test_dataset = torchvision.datasets.SVHN(C['SVHN_TEST'],
                                                  split='test',
@@ -138,9 +192,32 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
         test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
     elif ds_type == 'CIFAR10':
-        #train_dataset = torchvision.datasets.CIFAR10(C['BIASED_CIFAR10_TRAIN'],)
-        ImageDataset
+        train_dataset = ImagePathDataset(C['BIASED_CIFAR10_TRAIN'])
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=2750,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
+        train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
+                                   
+        test_dataset = ImagePathDataset(C['BIASED_CIFAR10_TEST'])
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=5500,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
+        test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)                                  
 
     data_dict = to_data_dict(train_imgs=train_imgs,
                              train_labels=train_labels,
@@ -317,11 +394,6 @@ def loss_based_ranking(model,
     for n in range(num_forward_pass):
         losses_all = []
 
-#         for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-#             batch = train_imgs[i:i + BATCH_SIZE]
-#             # patched BYOL lib to return losses directly
-#             losses = model.learner.forward(batch, return_losses=True)
-#             losses_all.append(losses.detach().numpy())
         for train_img, train_label in loader_dict["train_loader"]:
             img = train_img.to(DEVICE)
             losses = model.learner.forward(img, return_losses=True)
@@ -338,6 +410,8 @@ def loss_based_ranking(model,
     loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
                         np.square(loss_means))
 
+    # TODO: DO BOTH OF THESE IN ONE GO, DONT REQUIRE TWO FUNCTION CALLS FOR SPEED
+    
     if mode == 'mean':
         # Argsort of -array sorts in descending order,
         # so we get the highest mean loss examples
@@ -443,9 +517,7 @@ def linear_eval(data_dict, features_dict, train_idx):
 
 
 def main():
-    # TODO: convert to flag
-    ckpt_path = C['STL10_WEIGHTS']
-    model = init_model(ckpt_path=ckpt_path)
+    model = init_model(DATASET)
 
     if os.environ.get('USER') == 'acganesh':
         with open("cache/data_dict.pkl", 'rb') as f:
@@ -454,11 +526,12 @@ def main():
         with open("cache/features_dict.pkl", 'rb') as f:
             features_dict = pickle.load(f)
     else:
-        data_dict, loader_dict = init_data()
+        data_dict, loader_dict = init_data(DATASET)
         features_dict = featurize_data(model, data_dict, loader_dict)
 
     print("Data and features loaded!")
 
+    # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
@@ -469,7 +542,7 @@ def main():
         num_forward_pass=5,
         mode='mean')
     
-    grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
+    train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles = grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
 
 
 if __name__ == '__main__':

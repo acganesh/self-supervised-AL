@@ -187,11 +187,21 @@ class BYOL(nn.Module):
                  augment_fn=None,
                  augment_fn2=None,
                  moving_average_decay=0.99,
+                 ds_type='STL10',
                  use_momentum=True):
         super().__init__()
         self.net = net
 
         # default SimCLR augmentation
+        if ds_type=='STL10':
+            norm_aug = T.Normalize(mean=torch.tensor([0.485, 0.456, 0.406]),
+                        std=torch.tensor([0.229, 0.224, 0.225]))
+        elif ds_type=='SVHN':
+            norm_aug = T.Normalize(mean=torch.tensor([0.438, 0.444, 0.473]),
+                        std=torch.tensor([0.198, 0.201, 0.197]))
+        elif ds_type=='CIFAR10':
+            norm_aug = T.Normalize(mean=torch.tensor([0.490, 0.479, 0.442]),
+                        std=torch.tensor([0.247, 0.244, 0.260]))
 
         DEFAULT_AUG = torch.nn.Sequential(
             RandomApply(T.ColorJitter(0.8, 0.8, 0.8, 0.2), p=0.3),
@@ -199,8 +209,7 @@ class BYOL(nn.Module):
             T.RandomHorizontalFlip(),
             RandomApply(T.GaussianBlur((3, 3), (1.0, 2.0)), p=0.2),
             T.RandomResizedCrop((image_size, image_size)),
-            T.Normalize(mean=torch.tensor([0.485, 0.456, 0.406]),
-                        std=torch.tensor([0.229, 0.224, 0.225])),
+            norm_aug,
         )
 
         self.augment1 = default(augment_fn, DEFAULT_AUG)
