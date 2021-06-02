@@ -28,4 +28,6 @@ config_cluster = {
     'STL10_WEIGHTS': '/scratch/users/avento/model_weights/learner_0510_v100.pt',
     'SVHN_WEIGHTS': '/scratch/users/avento/model_weights/learning_svhn_0529_v100.pt',  
     'CIFAR10_WEIGHTS': '/scratch/users/avento/model_weights/learning_cifar_0530_v100.pt',
+
+    'METRICS_PATH': '/scratch/users/avento/saved_metrics/'
 }
