@@ -306,8 +306,8 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     test_imgs = torch.flatten(data_dict['test_imgs'], start_dim=1)
     test_labels = data_dict['test_labels']
 
-    train_embeddings = features_dict['train_embeddings'].detach().numpy()
-    test_embeddings = features_dict['test_embeddings'].detach().numpy()
+    train_embeddings = features_dict['train_embeddings'].detach().cpu().numpy()
+    test_embeddings = features_dict['test_embeddings'].detach().cpu().numpy()
 
     lr_baseline = LogisticRegression(max_iter=100000)
     lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
