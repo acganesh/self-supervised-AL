@@ -290,6 +290,32 @@ def get_predictions(data_dict, features_dict):
     return baseline_preds, baseline_acc, byol_preds, byol_acc
 
 
+def linear_eval(data_dict, features_dict, train_idx):
+    train_imgs = data_dict['train_imgs']
+    train_labels = data_dict['train_labels']
+    test_imgs = data_dict['test_imgs']
+    test_labels = data_dict['test_labels']
+
+    train_embeddings = data_dict['train_embeddings']
+    test_embeddings = data_dict['test_embeddings']
+
+    lr_baseline = LogisticRegression(max_iter=100000)
+    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
+                    train_labels[train_idx])
+
+    lr_baseline_preds = lr_baseline.predict(test_imgs)
+    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
+                                                     lr_baseline_preds)
+
+    lr_byol = LogisticRegression(max_iter=100000)
+    lr_byol.fit(train_embeddings[train_idx])
+
+    lr_byol_preds = lr_byol.predict(test_imgs)
+    lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
+
+    print("LR baseline acc: ", lr_baseline_acc)
+    print("LR BYOL acc: ", lr_byol_acc)
+
 def rand_sample(data_dict, features_dict):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
@@ -381,8 +407,7 @@ def loss_based_ranking(model,
                        data_dict,
                        loader_dict,
                        n_examples,
-                       num_forward_pass=5,
-                       mode='mean'):
+                       num_forward_pass=5):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
@@ -409,22 +434,18 @@ def loss_based_ranking(model,
     loss_means = loss_sum / num_forward_pass
     loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
                         np.square(loss_means))
+        
 
-    # TODO: DO BOTH OF THESE IN ONE GO, DONT REQUIRE TWO FUNCTION CALLS FOR SPEED
+    idx = np.argsort(-loss_means)
+    mean_subset = idx[:n_examples]
+    print("Mean Loss Eval:")
+    linear_eval(data_dict, features_dict, mean_subset)
+
+    idx = np.argsort(-loss_stds)
+    std_subset = idx[:n_examples]
+    print("STD Loss Eval:")
+    linear_eval(data_dict, features_dict, std_subset)
     
-    if mode == 'mean':
-        # Argsort of -array sorts in descending order,
-        # so we get the highest mean loss examples
-        idx = np.argsort(-loss_means)
-    elif mode == 'std':
-        # Similarly for stdev
-        idx = np.argsort(-loss_stds)
-
-    subset = idx[:n_examples]
-    train_imgs_subset = train_imgs[subset]
-    train_labels_subset = train_labels[subset]
-
-    return train_imgs_subset, train_labels_subset
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples):
@@ -465,9 +486,9 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples)
     # Select
     idx = np.argsort(-train_norms)
 
-    subset = idx[:n_examples]
-    train_imgs_subset_norm = train_imgs[subset]
-    train_labels_subset_norm = train_labels[subset]
+    grad_subset = idx[:n_examples]
+    print("Grad Based Eval:")
+    linear_eval(data_dict, features_dict, grad_subset)
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -482,38 +503,6 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples)
     # subset = idx[:n_examples]
     # train_imgs_subset_angles = train_imgs[subset]
     # train_labels_subset_angles = train_labels[subset]
-    train_imgs_subset_angles = None
-    train_labels_subset_angles = None
-
-
-    return train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles
-
-
-def linear_eval(data_dict, features_dict, train_idx):
-    train_imgs = data_dict['train_imgs']
-    train_labels = data_dict['train_labels']
-    test_imgs = data_dict['test_imgs']
-    test_labels = data_dict['test_labels']
-
-    train_embeddings = data_dict['train_embeddings']
-    test_embeddings = data_dict['test_embeddings']
-
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
-                    train_labels[train_idx])
-
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
-                                                     lr_baseline_preds)
-
-    lr_byol = LogisticRegression(max_iter=100000)
-    lr_byol.fit(train_embeddings[train_idx])
-
-    lr_byol_preds = lr_byol.predict(test_imgs)
-    lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
-
-    print("LR baseline acc: ", lr_baseline_acc)
-    print("LR BYOL acc: ", lr_byol_acc)
 
 
 def main():
@@ -539,10 +528,8 @@ def main():
         data_dict,
         loader_dict,
         n_examples=10,
-        num_forward_pass=5,
-        mode='mean')
-    
-    train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles = grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
+        num_forward_pass=5)
+    grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
 
 
 if __name__ == '__main__':
