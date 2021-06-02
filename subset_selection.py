@@ -472,7 +472,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
         img = train_img.to(DEVICE)
         for cur_img in range(img.shape[0]):
             model.zero_grad()
-            proj, embedding, loss = model.learner.forward(
+            proj1, proj2, loss = model.learner.forward(
                 img[cur_img].unsqueeze(0),
                 return_embedding=False,
                 return_projection=False,
