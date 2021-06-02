@@ -449,7 +449,7 @@ def kmeans_sample(data_dict, features_dict, num_examples):
 
 
 @torch.no_grad()
-def loss_based_ranking(model, data_dict, loader_dict, num_examples,
+def loss_based_ranking(model, data_dict, features_dict, loader_dict, num_examples,
                        num_forward_pass):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
@@ -582,6 +582,7 @@ def main():
     train_imgs_subset, train_labels_subset = loss_based_ranking(
         model,
         data_dict,
+        features_dict,
         loader_dict,
         num_examples=num_examples,
         num_forward_pass=5)
