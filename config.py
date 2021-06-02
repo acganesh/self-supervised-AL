@@ -11,6 +11,8 @@ config_local = {    # Data
     'STL10_WEIGHTS': './ckpt/learner_0510_v100.pt',
     'SVHN_WEIGHTS': None,  # populate
     'CIFAR10_WEIGHTS': None,
+
+    'METRICS_PATH': './metrics/'
 }
 
 config_cluster = {

@@ -19,6 +19,9 @@ from pathlib import Path
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import average_precision_score
+from sklearn.preprocessing import label_binarize
 from torch.utils.data import DataLoader
 
 from collections import Counter
@@ -35,6 +38,7 @@ else:
     DATASET = "CIFAR10"
 
 LR = 3e-4
+NUM_CLASSES = 10
 NUM_WORKERS = multiprocessing.cpu_count(
 ) if multiprocessing.cpu_count() < 3 else 3
 IMAGE_SIZE = None  # will be populated
@@ -317,12 +321,21 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
 
     lr_baseline_scores = lr_baseline.predict_proba(test_imgs)
+
+    if lr_baseline_scores.shape[1] != NUM_CLASSES:
+        lr_baseline_scores = insert_zeros(lr_baseline_scores,
+                                          lr_baseline.classes_)
+
     lr_baseline_preds = lr_baseline.predict(test_imgs)
 
     lr_byol = LogisticRegression(max_iter=100000)
     lr_byol.fit(train_embeddings[train_idx], train_labels[train_idx])
 
     lr_byol_scores = lr_byol.predict_proba(test_embeddings)
+
+    if lr_byol_scores.shape[1] != NUM_CLASSES:
+        lr_byol_scores = insert_zeros(lr_byol_scores, lr_baseline.classes_)
+
     lr_byol_preds = lr_byol.predict(test_embeddings)
 
     prediction_dict = {
@@ -332,18 +345,53 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
         'lr_byol_preds': lr_byol_preds
     }
 
-    metrics_dict = compute_metrics(data_dict, prediction_dict)
+    metrics_dict, pr_dict = compute_metrics(data_dict, prediction_dict)
     metrics_dict.update(metadata_dict)
+    pr_dict.update(metadata_dict)
 
     if log:
         print("=" * 80)
         pprint(metrics_dict)
 
-    return metrics_dict
+    return metrics_dict, pr_dict
 
 
 def get_timestamp():
     return datetime.datetime.now().strftime('%m%d%y-%H%M%S')
+
+
+def multi_class_pr(Y_test, y_score):
+    precision = dict()
+    recall = dict()
+    average_precision = dict()
+
+    n_classes = 10
+
+    Y = label_binarize(Y_test, classes=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+    for i in range(n_classes):
+        precision[i], recall[i], _ = precision_recall_curve(
+            Y[:, i], y_score[:, i])
+        average_precision[i] = average_precision_score(Y[:, i], y_score[:, i])
+
+    pr_dict = {
+        'precision': precision,
+        'recall': recall,
+        'average_precision': average_precision
+    }
+    return pr_dict
+
+
+def insert_zeros(scores, mapping):
+    mapping = list(mapping)
+
+    new_scores = np.zeros((scores.shape[0], NUM_CLASSES))
+    for class_index in range(NUM_CLASSES):
+        if class_index not in mapping:
+            continue
+        else:
+            new_scores[:, class_index] = scores[:, mapping.index(class_index)]
+    return new_scores
 
 
 def compute_metrics(data_dict, prediction_dict):
@@ -357,38 +405,61 @@ def compute_metrics(data_dict, prediction_dict):
 
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
-    #lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_baseline_scores)
+
+    lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(
+        test_labels, lr_baseline_scores)
+    lr_baselise_pr_dict = multi_class_pr(test_labels, lr_baseline_scores)
     #lr_baseline_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_baseline_scores)
 
+    lr_baseline_pr = multi_class_pr(test_labels, lr_baseline_scores)
+
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
-    #lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_byol_scores)
+    lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(
+        test_labels, lr_byol_scores)
+    lr_byol_pr = multi_class_pr(test_labels, lr_byol_scores)
     #lr_byol_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_byol_scores)
 
     # TODO: need to add to this.
     metrics_dict = {
         'lr_baseline_acc': lr_baseline_acc,
-        #'lr_baseline_top3_acc': lr_baseline_top3_acc,
+        'lr_baseline_top3_acc': lr_baseline_top3_acc,
         #'lr_baseline_average_precision': lr_baseline_average_precision,
         'lr_byol_acc': lr_byol_acc,
-        #'lr_byol_top3_acc': lr_byol_top3_acc,
+        'lr_byol_top3_acc': lr_byol_top3_acc,
         #'lr_byol_average_precision': lr_byol_average_precision
     }
 
-    return metrics_dict
+    pr_dict = {'lr_baseline_pr': lr_baseline_pr, 'lr_byol_pr': lr_byol_pr}
+
+    return metrics_dict, pr_dict
 
 
-def log_metrics(metrics):
+def log_metrics(metrics, timestamp):
     timestamp = get_timestamp()
     ds_type = metrics[0]['ds_type']
 
-    if not os.path.exists('./metrics'):
-        os.mkdir('./metrics')
-    fpath = f'./metrics/{timestamp}_{ds_type}_metrics.csv'
+    if not os.path.exists(C['METRICS_PATH']):
+        os.mkdir(C['METRICS_PATH'])
+    fpath = os.path.join(C['METRICS_PATH'],
+                         f'{timestamp}_{ds_type}_metrics.csv')
 
     with open(fpath, 'w') as f:
         dict_writer = csv.DictWriter(f, metrics[0].keys())
         dict_writer.writeheader()
         dict_writer.writerows(metrics)
+
+
+def log_prs(pr_all, timestamp):
+    timestamp = get_timestamp()
+    ds_type = pr_all[0]['ds_type']
+
+    if not os.path.exists(C['METRICS_PATH']):
+        os.mkdir(C['METRICS_PATH'])
+
+    fpath = os.path.join(C['METRICS_PATH'], f'{timestamp}_{ds_type}_pr.pkl')
+
+    with open(fpath, 'wb') as f:
+        pickle.dump(pr_all, f)
 
 
 def rand_sample(data_dict, features_dict, num_examples):
@@ -408,7 +479,9 @@ def rand_sample(data_dict, features_dict, num_examples):
         'ds_type': DATASET,
         'num_examples': num_examples
     }
-    return linear_eval(data_dict, features_dict, random_idx, metadata_dict)
+    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, random_idx,
+                                        metadata_dict)
+    return metrics_dict, pr_dict
 
 
 def kmeans_sample(data_dict, features_dict, num_examples):
@@ -443,7 +516,9 @@ def kmeans_sample(data_dict, features_dict, num_examples):
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    return linear_eval(data_dict, features_dict, kmeans_idx, metadata_dict)
+    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, kmeans_idx,
+                                        metadata_dict)
+    return metrics_dict, pr_dict
 
 
 @torch.no_grad()
@@ -477,6 +552,7 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
                         np.square(loss_means))
 
     metrics = []
+    pr_dicts = []
 
     ### Mean eval ###
     metadata_dict = {
@@ -487,9 +563,10 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
     idx = np.argsort(-loss_means)
     mean_subset = idx[:num_examples]
     print("Mean Loss Eval:")
-    metrics_dict = linear_eval(data_dict, features_dict, mean_subset,
-                               metadata_dict)
+    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, mean_subset,
+                                        metadata_dict)
     metrics.append(metrics_dict)
+    pr_dicts.append(pr_dict)
 
     ### Stdev eval ###
     metadata_dict = {
@@ -500,11 +577,12 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
     idx = np.argsort(-loss_stds)
     std_subset = idx[:num_examples]
     print("STD Loss Eval:")
-    metrics_dict = linear_eval(data_dict, features_dict, std_subset,
-                               metadata_dict)
+    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, std_subset,
+                                        metadata_dict)
     metrics.append(metrics_dict)
+    pr_dists.append(pr_dict)
 
-    return metrics
+    return metrics, pr_dicts
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
@@ -554,7 +632,9 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    return linear_eval(data_dict, features_dict, grad_subset, metadata_dict)
+    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, grad_subset,
+                                        metadata_dict)
+    return metrics_dict, pr_dict
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -591,28 +671,41 @@ def main():
     num_examples = 10
 
     metrics = []
-    metrics.append(
-        rand_sample(data_dict, features_dict, num_examples=num_examples))
-    metrics.append(
-        kmeans_sample(data_dict, features_dict, num_examples=num_examples))
+    pr_all = []
+
+    metrics_dict, pr_dict = rand_sample(data_dict,
+                                        features_dict,
+                                        num_examples=num_examples)
+    metrics.append(metrics_dict)
+    pr_all.append(pr_dict)
+
+    metrics_dict, pr_dict = kmeans_sample(data_dict,
+                                          features_dict,
+                                          num_examples=num_examples)
+    metrics.append(metrics_dict)
+    pr_all.append(pr_dict)
 
     if os.environ.get('USER') != 'acganesh':
-        metrics_loss_based = loss_based_ranking(model,
-                                                data_dict,
-                                                features_dict,
-                                                loader_dict,
-                                                num_examples=num_examples,
-                                                num_forward_pass=5)
-        metrics += metrics_loss_based
+        metrics_list, pr_dicts = loss_based_ranking(model,
+                                                    data_dict,
+                                                    features_dict,
+                                                    loader_dict,
+                                                    num_examples=num_examples,
+                                                    num_forward_pass=5)
+        metrics += metrics_list
+        pr_all += pr_dicts
 
-        metrics_dict = grad_based_ranking(model,
-                                          data_dict,
-                                          features_dict,
-                                          loader_dict,
-                                          num_examples=num_examples)
+        metrics_dict, pr_dict = grad_based_ranking(model,
+                                                   data_dict,
+                                                   features_dict,
+                                                   loader_dict,
+                                                   num_examples=num_examples)
         metrics.append(metrics_dict)
+        pr_all.append(pr_dict)
 
-    log_metrics(metrics)
+    timestamp = get_timestamp()
+    log_metrics(metrics, timestamp)
+    log_prs(pr_all, timestamp)
 
 
 if __name__ == '__main__':
