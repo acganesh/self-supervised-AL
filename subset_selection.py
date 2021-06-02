@@ -409,7 +409,6 @@ def compute_metrics(data_dict, prediction_dict):
     lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(
         test_labels, lr_baseline_scores)
     lr_baselise_pr_dict = multi_class_pr(test_labels, lr_baseline_scores)
-    #lr_baseline_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_baseline_scores)
 
     lr_baseline_pr = multi_class_pr(test_labels, lr_baseline_scores)
 
@@ -417,16 +416,12 @@ def compute_metrics(data_dict, prediction_dict):
     lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(
         test_labels, lr_byol_scores)
     lr_byol_pr = multi_class_pr(test_labels, lr_byol_scores)
-    #lr_byol_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_byol_scores)
 
-    # TODO: need to add to this.
     metrics_dict = {
         'lr_baseline_acc': lr_baseline_acc,
         'lr_baseline_top3_acc': lr_baseline_top3_acc,
-        #'lr_baseline_average_precision': lr_baseline_average_precision,
         'lr_byol_acc': lr_byol_acc,
         'lr_byol_top3_acc': lr_byol_top3_acc,
-        #'lr_byol_average_precision': lr_byol_average_precision
     }
 
     pr_dict = {'lr_baseline_pr': lr_baseline_pr, 'lr_byol_pr': lr_byol_pr}
