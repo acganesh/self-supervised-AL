@@ -462,7 +462,7 @@ def log_prs(pr_all, timestamp):
         pickle.dump(pr_all, f)
 
 
-def rand_sample(data_dict, features_dict, num_examples):
+def rand_sample(data_dict, features_dict, num_examples_list):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     test_imgs = data_dict['test_imgs']
@@ -470,21 +470,26 @@ def rand_sample(data_dict, features_dict, num_examples):
     train_embeddings = features_dict['train_embeddings']
     test_embeddings = features_dict['test_embeddings']
 
-    random_idx = np.random.randint(0,
-                                   high=train_imgs.shape[0],
-                                   size=num_examples)
+    metrics = []
+    pr_list = []
+    for num_examples in num_examples_list:
+        random_idx = np.random.randint(0,
+                                       high=train_imgs.shape[0],
+                                       size=num_examples)
+        metadata_dict = {
+            'sampler_type': 'rand',
+            'ds_type': DATASET,
+            'num_examples': num_examples
+        }
 
-    metadata_dict = {
-        'sampler_type': 'rand',
-        'ds_type': DATASET,
-        'num_examples': num_examples
-    }
-    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, random_idx,
-                                        metadata_dict)
-    return metrics_dict, pr_dict
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            random_idx, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
+    return metrics, pr_list
 
 
-def kmeans_sample(data_dict, features_dict, num_examples):
+def kmeans_sample(data_dict, features_dict, num_examples_list):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     test_imgs = data_dict['test_imgs']
@@ -507,23 +512,28 @@ def kmeans_sample(data_dict, features_dict, num_examples):
 
     weights_full = [weights[k] for k in clusters]
 
-    kmeans_idx = random.choices(range(train_imgs.shape[0]),
-                                weights=weights_full,
-                                k=num_examples)
+    metrics = []
+    pr_list = []
+    for num_examples in num_examples_list:
+        kmeans_idx = random.choices(range(train_imgs.shape[0]),
+                                    weights=weights_full,
+                                    k=num_examples)
 
-    metadata_dict = {
-        'sampler_type': 'kmeans',
-        'num_examples': num_examples,
-        'ds_type': DATASET
-    }
-    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, kmeans_idx,
-                                        metadata_dict)
-    return metrics_dict, pr_dict
+        metadata_dict = {
+            'sampler_type': 'kmeans',
+            'num_examples': num_examples,
+            'ds_type': DATASET
+        }
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            kmeans_idx, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
+    return metrics, pr_list
 
 
 @torch.no_grad()
 def loss_based_ranking(model, data_dict, features_dict, loader_dict,
-                       num_examples, num_forward_pass):
+                       num_examples_list, num_forward_pass):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
@@ -552,41 +562,41 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
                         np.square(loss_means))
 
     metrics = []
-    pr_dicts = []
+    pr_list = []
+    for num_examples in num_examples_list:
+        ### Mean eval ###
+        metadata_dict = {
+            'sampler_type': 'loss_based_mean',
+            'num_examples': num_examples,
+            'ds_type': DATASET
+        }
+        idx = np.argsort(-loss_means)
+        mean_subset = idx[:num_examples]
+        print("Mean Loss Eval:")
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            mean_subset, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
 
-    ### Mean eval ###
-    metadata_dict = {
-        'sampler_type': 'loss_based_mean',
-        'num_examples': num_examples,
-        'ds_type': DATASET
-    }
-    idx = np.argsort(-loss_means)
-    mean_subset = idx[:num_examples]
-    print("Mean Loss Eval:")
-    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, mean_subset,
-                                        metadata_dict)
-    metrics.append(metrics_dict)
-    pr_dicts.append(pr_dict)
+        ### Stdev eval ###
+        metadata_dict = {
+            'sampler_type': 'loss_based_std',
+            'num_examples': num_examples,
+            'ds_type': DATASET
+        }
+        idx = np.argsort(-loss_stds)
+        std_subset = idx[:num_examples]
+        print("STD Loss Eval:")
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            std_subset, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
 
-    ### Stdev eval ###
-    metadata_dict = {
-        'sampler_type': 'loss_based_std',
-        'num_examples': num_examples,
-        'ds_type': DATASET
-    }
-    idx = np.argsort(-loss_stds)
-    std_subset = idx[:num_examples]
-    print("STD Loss Eval:")
-    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, std_subset,
-                                        metadata_dict)
-    metrics.append(metrics_dict)
-    pr_dists.append(pr_dict)
-
-    return metrics, pr_dicts
+    return metrics, pr_list
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
-                       num_examples):
+                       num_examples_list):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
@@ -622,19 +632,24 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
     model.zero_grad()
 
     # Select
-    idx = np.argsort(-train_norms)
+    metrics = []
+    pr_list = []
+    for num_examples in num_examples_list:
+        idx = np.argsort(-train_norms)
 
-    grad_subset = idx[:num_examples]
-    print("Grad Based Eval:")
+        grad_subset = idx[:num_examples]
+        print("Grad Based Eval:")
 
-    metadata_dict = {
-        'sampler_type': 'grad_based',
-        'num_examples': num_examples,
-        'ds_type': DATASET
-    }
-    metrics_dict, pr_dict = linear_eval(data_dict, features_dict, grad_subset,
-                                        metadata_dict)
-    return metrics_dict, pr_dict
+        metadata_dict = {
+            'sampler_type': 'grad_based',
+            'num_examples': num_examples,
+            'ds_type': DATASET
+        }
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            grad_subset, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
+    return metrics, pr_list
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -666,45 +681,43 @@ def main():
 
     print("Data and features loaded!")
 
-    # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
+    num_examples_list = [5, 10]
 
-    num_examples = 10
-
-    metrics = []
+    metrics_all = []
     pr_all = []
 
-    metrics_dict, pr_dict = rand_sample(data_dict,
-                                        features_dict,
-                                        num_examples=num_examples)
-    metrics.append(metrics_dict)
-    pr_all.append(pr_dict)
+    metrics, pr = rand_sample(data_dict,
+                              features_dict,
+                              num_examples_list=num_examples_list)
+    metrics_all += metrics
+    pr_all += pr
 
-    metrics_dict, pr_dict = kmeans_sample(data_dict,
-                                          features_dict,
-                                          num_examples=num_examples)
-    metrics.append(metrics_dict)
-    pr_all.append(pr_dict)
+    metrics, pr = kmeans_sample(data_dict,
+                                features_dict,
+                                num_examples_list=num_examples_list)
+    metrics_all += metrics
+    pr_all += pr
 
     if os.environ.get('USER') != 'acganesh':
-        metrics_list, pr_dicts = loss_based_ranking(model,
-                                                    data_dict,
-                                                    features_dict,
-                                                    loader_dict,
-                                                    num_examples=num_examples,
-                                                    num_forward_pass=5)
-        metrics += metrics_list
-        pr_all += pr_dicts
+        metrics, pr = loss_based_ranking(model,
+                                         data_dict,
+                                         features_dict,
+                                         loader_dict,
+                                         num_examples_list=num_examples_list,
+                                         num_forward_pass=5)
+        metrics_all += metrics
+        pr_all += pr
 
-        metrics_dict, pr_dict = grad_based_ranking(model,
-                                                   data_dict,
-                                                   features_dict,
-                                                   loader_dict,
-                                                   num_examples=num_examples)
-        metrics.append(metrics_dict)
-        pr_all.append(pr_dict)
+        metrics, pr = grad_based_ranking(model,
+                                         data_dict,
+                                         features_dict,
+                                         loader_dict,
+                                         num_examples_list=num_examples_list)
+        metrics_all += metrics
+        pr_all += pr
 
     timestamp = get_timestamp()
-    log_metrics(metrics, timestamp)
+    log_metrics(metrics_all, timestamp)
     log_prs(pr_all, timestamp)
 
 
