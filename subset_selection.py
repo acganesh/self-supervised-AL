@@ -581,23 +581,23 @@ def main():
         rand_sample(data_dict, features_dict, num_examples=num_examples))
     metrics.append(
         kmeans_sample(data_dict, features_dict, num_examples=num_examples))
-    """
-    train_imgs_subset, train_labels_subset, metrics_dict = loss_based_ranking(
-        model,
-        data_dict,
-        features_dict,
-        loader_dict,
-        num_examples=num_examples,
-        num_forward_pass=5)
-    metrics.append(metrics_dict)
 
-    metrics_dict = grad_based_ranking(model,
-                       data_dict,
-                       features_dict,
-                       loader_dict,
-                       num_examples=num_examples)
-    metrics.append(metrics_dict)
-    """
+    if os.environ.get('USER') != 'acganesh':
+        metrics_dict = loss_based_ranking(
+            model,
+            data_dict,
+            features_dict,
+            loader_dict,
+            num_examples=num_examples,
+            num_forward_pass=5)
+        metrics.append(metrics_dict)
+
+        metrics_dict = grad_based_ranking(model,
+                        data_dict,
+                        features_dict,
+                        loader_dict,
+                        num_examples=num_examples)
+        metrics.append(metrics_dict)
 
     log_metrics(metrics)
 
