@@ -365,9 +365,9 @@ def multi_class_pr(Y_test, y_score):
     recall = dict()
     average_precision = dict()
 
-    Y = label_binarize(Y_test, classes=set(np.array(Y_test)))
+    Y = label_binarize(Y_test, classes=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 
-    for i in range(N_CLASSES):
+    for i in range(NUM_CLASSES):
         precision[i], recall[i], _ = precision_recall_curve(
             Y[:, i], y_score[:, i])
         average_precision[i] = average_precision_score(Y[:, i], y_score[:, i])
