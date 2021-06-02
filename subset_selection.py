@@ -10,24 +10,50 @@ import sklearn
 import torch
 import torchvision
 
+from PIL import Image
+from pathlib import Path
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from torch.utils.data import DataLoader
 
 from collections import Counter
+from tqdm import tqdm
 
 from src.data.dataloaders import ImagesDataset
 from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
-BATCH_SIZE = 256
-EPOCHS = 1000
+DATASET = "SVHN" # or "STL10" or "SVHN" or "CIFAR10"
 LR = 3e-4
-IMAGE_SIZE = 96  # Change this depending on dataset
-NUM_GPUS = 0  # Change this depending on host
-NUM_WORKERS = multiprocessing.cpu_count()
+NUM_WORKERS = multiprocessing.cpu_count() if multiprocessing.cpu_count() < 3 else 3
+IMAGE_SIZE = None # will be populated
+
+class ImagePathDataset(torch.utils.data.Dataset):
+    def __init__(self, folder):
+        super().__init__()
+        self.folder = folder
+        self.paths = []
+        self.labels = []
+
+        for path in Path(f'{folder}').glob('**/*'):
+            _, ext = os.path.splitext(path)
+            if ext.lower() in ['.jpg', '.png', '.jpeg']:
+                self.paths.append(path)
+                self.labels.append(int(str(path)[-5]))
+        
+        self.transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, index):
+        path = self.paths[index]
+        img = Image.open(path)
+        img = img.convert('RGB')
+        return self.transform(img), self.labels[index]
 
 
 def load_config():
@@ -68,20 +94,44 @@ def get_ckpt_path(model_type):
     return C['model_type']
 
 
-# TODO: index the checkpoints by key
-def init_model(ckpt_path):
+def init_model(ds_type='STL10'):
     resnet = torchvision.models.resnet18(pretrained=False)
-    model = SelfSupervisedLearner(resnet,
-                                  image_size=IMAGE_SIZE,
-                                  hidden_layer='avgpool',
-                                  projection_size=256,
-                                  projection_hidden_size=4096,
-                                  moving_average_decay=0.99,
-                                  lr=LR)
-    model.load_state_dict(torch.load(ckpt_path))
-
+    if ds_type == 'STL10':
+        IMAGE_SIZE= 96
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['STL10_WEIGHTS']))
+    elif ds_type == 'SVHN':
+        IMAGE_SIZE= 32
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['SVHN_WEIGHTS']))
+    elif ds_type == 'CIFAR10':
+        IMAGE_SIZE= 32
+        model = SelfSupervisedLearner(resnet,
+                                      image_size=IMAGE_SIZE,
+                                      hidden_layer='avgpool',
+                                      projection_size=256,
+                                      projection_hidden_size=4096,
+                                      moving_average_decay=0.99,
+                                      ds_type=ds_type,
+                                      lr=LR)
+        model.load_state_dict(torch.load(C['CIFAR10_WEIGHTS']))
+                                   
     model = model.to(DEVICE)
-    print(f"Loaded checkpoint from {ckpt_path}")
+    print(f"Loaded checkpoint!")
     return model
 
 
@@ -98,6 +148,10 @@ def init_data(ds_type='STL10'):
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
         train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
 
         test_dataset = torchvision.datasets.STL10(C['STL10_TEST'],
                                                   split='test',
@@ -108,17 +162,26 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
         test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
 
     elif ds_type == 'SVHN':
         train_dataset = torchvision.datasets.SVHN(C['SVHN_EXTRA'],
                                                   split='extra',
                                                   download=False,
                                                   transform=data_transforms)
+        train_dataset = torch.utils.data.Subset(train_dataset, np.arange(50000))
         train_loader = DataLoader(train_dataset,
-                                  batchsize=100000,
+                                  batch_size=50000,
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
         train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
 
         test_dataset = torchvision.datasets.SVHN(C['SVHN_TEST'],
                                                  split='test',
@@ -129,29 +192,67 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
         test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
     elif ds_type == 'CIFAR10':
-        #train_dataset = torchvision.datasets.CIFAR10(C['BIASED_CIFAR10_TRAIN'],)
-        ImageDataset
+        train_dataset = ImagePathDataset(C['BIASED_CIFAR10_TRAIN'])
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=2750,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
+        train_imgs, train_labels = next(iter(train_loader))
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=512,
+                                  num_workers=NUM_WORKERS,
+                                  shuffle=False)
+                                   
+        test_dataset = ImagePathDataset(C['BIASED_CIFAR10_TEST'])
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=5500,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)
+        test_imgs, test_labels = next(iter(test_loader))
+        test_loader = DataLoader(test_dataset,
+                                 batch_size=512,
+                                 num_workers=NUM_WORKERS,
+                                 shuffle=False)                                  
 
-    data_dict = to_data_dict(train_imgs=train_imgs.to(DEVICE),
-                             train_labels=train_labels.to(DEVICE),
-                             test_imgs=test_imgs.to(DEVICE),
-                             test_labels=test_labels.to(DEVICE))
+    data_dict = to_data_dict(train_imgs=train_imgs,
+                             train_labels=train_labels,
+                             test_imgs=test_imgs,
+                             test_labels=test_labels)
+    loader_dict = {"train_loader": train_loader, "test_loader": test_loader}
 
     print("Dataset initialized")
-    return data_dict
+    return data_dict, loader_dict
 
-
-def featurize_data(model, data_dict):
+@torch.no_grad()
+def featurize_data(model, data_dict, loader_dict):
     D = data_dict
     train_imgs = torch.flatten(D['train_imgs'], start_dim=1)
     test_imgs = torch.flatten(D['test_imgs'], start_dim=1)
 
+    
     pca = PCA(n_components=512)
-    train_projs, train_embeddings = model.learner.forward(
-        D['train_imgs'], return_embedding=True)
-    test_projs, test_embeddings = model.learner.forward(D['test_imgs'],
-                                                        return_embedding=True)
+    train_projs, test_projs = [], []
+    train_embeddings, test_embeddings = [], []
+    for train_img, train_label in loader_dict["train_loader"]:
+        img = train_img.to(DEVICE)
+        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        train_projs.append(cur_projs)
+        train_embeddings.append(cur_embeddings)
+    train_embeddings = torch.cat(train_embeddings, dim=0)
+    train_projs = torch.cat(train_projs, dim=0)
+
+    for test_img, test_label in loader_dict["test_loader"]:
+        img = test_img.to(DEVICE)
+        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        test_projs.append(cur_projs)
+        test_embeddings.append(cur_embeddings)
+    test_embeddings = torch.cat(test_embeddings, dim=0)
+    test_projs = torch.cat(test_projs, dim=0)
 
     train_imgs_pca = pca.fit_transform(
         torch.flatten(D['train_imgs'], start_dim=1))
@@ -189,6 +290,32 @@ def get_predictions(data_dict, features_dict):
     return baseline_preds, baseline_acc, byol_preds, byol_acc
 
 
+def linear_eval(data_dict, features_dict, train_idx):
+    train_imgs = data_dict['train_imgs']
+    train_labels = data_dict['train_labels']
+    test_imgs = data_dict['test_imgs']
+    test_labels = data_dict['test_labels']
+
+    train_embeddings = data_dict['train_embeddings']
+    test_embeddings = data_dict['test_embeddings']
+
+    lr_baseline = LogisticRegression(max_iter=100000)
+    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
+                    train_labels[train_idx])
+
+    lr_baseline_preds = lr_baseline.predict(test_imgs)
+    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
+                                                     lr_baseline_preds)
+
+    lr_byol = LogisticRegression(max_iter=100000)
+    lr_byol.fit(train_embeddings[train_idx])
+
+    lr_byol_preds = lr_byol.predict(test_imgs)
+    lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
+
+    print("LR baseline acc: ", lr_baseline_acc)
+    print("LR BYOL acc: ", lr_byol_acc)
+
 def rand_sample(data_dict, features_dict):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
@@ -199,13 +326,13 @@ def rand_sample(data_dict, features_dict):
 
     random_idx = np.random.randint(0, high=train_imgs.shape[0], size=30)
 
-    embeddings_subset = train_embeddings.detach().numpy()[random_idx]
+    embeddings_subset = train_embeddings.detach().cpu().numpy()[random_idx]
     train_labels_subset = train_labels[random_idx]
 
     lr_rand = LogisticRegression(max_iter=100000)
     lr_rand.fit(embeddings_subset, train_labels_subset)
 
-    rand_preds = lr_rand.predict(test_embeddings.detach().numpy())
+    rand_preds = lr_rand.predict(test_embeddings.detach().cpu().numpy())
     rand_acc = sklearn.metrics.accuracy_score(test_labels, rand_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
@@ -234,12 +361,12 @@ def kmeans_sample(data_dict, features_dict):
     test_embeddings = features_dict['test_embeddings']
 
     km = KMeans(n_clusters=10, max_iter=100000)
-    km.fit(train_embeddings.detach().numpy())
+    km.fit(train_embeddings.detach().cpu().numpy())
 
     clusters = km.labels_
 
     counts = Counter(clusters)
-    total = train_embeddings.detach().numpy().shape[0]
+    total = train_embeddings.detach().cpu().numpy().shape[0]
 
     weights = {}
     uniform_prob = 0.1
@@ -252,13 +379,13 @@ def kmeans_sample(data_dict, features_dict):
                                 weights=weights_full,
                                 k=30)
 
-    embeddings_subset = train_embeddings.detach().numpy()[kmeans_idx]
+    embeddings_subset = train_embeddings.detach().cpu().numpy()[kmeans_idx]
     train_labels_subset = train_labels[kmeans_idx]
 
     lr_km = LogisticRegression(max_iter=100000)
     lr_km.fit(embeddings_subset, train_labels_subset)
 
-    km_preds = lr_km.predict(test_embeddings.detach().numpy())
+    km_preds = lr_km.predict(test_embeddings.detach().cpu().numpy())
     km_acc = sklearn.metrics.accuracy_score(test_labels, km_preds)
 
     lr_baseline = LogisticRegression(max_iter=100000)
@@ -275,12 +402,12 @@ def kmeans_sample(data_dict, features_dict):
 
     return km_acc, lr_baseline_acc
 
-
+@torch.no_grad()
 def loss_based_ranking(model,
                        data_dict,
+                       loader_dict,
                        n_examples,
-                       num_forward_pass=5,
-                       mode='mean'):
+                       num_forward_pass=5):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
@@ -292,15 +419,12 @@ def loss_based_ranking(model,
     for n in range(num_forward_pass):
         losses_all = []
 
-        for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-            batch = train_imgs[i:i + BATCH_SIZE]
-            # patched BYOL lib to return losses directly
-            losses = model.learner.forward(batch, return_losses=True)
-            losses_all.append(losses.detach().numpy())
-
+        for train_img, train_label in loader_dict["train_loader"]:
+            img = train_img.to(DEVICE)
+            losses = model.learner.forward(img, return_losses=True)
+            losses_all.append(losses.detach().cpu().numpy())
+                
         losses_all = np.concatenate(losses_all)
-
-        loss_history[i] = losses_all  # Storing for inspection
 
         loss_sum += losses_all
         loss_sum_squared += np.square(losses_all)
@@ -310,23 +434,21 @@ def loss_based_ranking(model,
     loss_means = loss_sum / num_forward_pass
     loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
                         np.square(loss_means))
+        
 
-    if mode == 'mean':
-        # Argsort of -array sorts in descending order,
-        # so we get the highest mean loss examples
-        idx = np.argsort(-loss_means)
-    elif mode == 'std':
-        # Similarly for stdev
-        idx = np.argsort(-loss_stds)
+    idx = np.argsort(-loss_means)
+    mean_subset = idx[:n_examples]
+    print("Mean Loss Eval:")
+    linear_eval(data_dict, features_dict, mean_subset)
 
-    subset = idx[:n_examples]
-    train_imgs_subset = train_imgs[subset]
-    train_labels_subset = train_labels[subset]
-
-    return train_imgs_subset, train_labels_subset
+    idx = np.argsort(-loss_stds)
+    std_subset = idx[:n_examples]
+    print("STD Loss Eval:")
+    linear_eval(data_dict, features_dict, std_subset)
+    
 
 
-def grad_based_ranking(model, data_dict, features_dict, n_examples):
+def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
@@ -335,48 +457,38 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
 
     # Global img index
     j = 0
-
-    for i in range(0, train_imgs.shape[0], BATCH_SIZE):
-        batch = train_imgs[i:i + BATCH_SIZE]
-
-        model.train()
-        proj, embedding, losses = model.learner.forward(
-            batch,
-            return_embedding=False,
-            return_projection=False,
-            return_losses=False,
-            return_losses_and_embeddings=True)
-
-        """
-        grads = {}
-        def save_grad(name):
-            def hook(grad):
-                grads[name] = grad
-            return hook
-
-        embedding.register_hook(save_grad('embedding'))
-        """
-
-        for k, loss in enumerate(losses):
+    
+    model.eval()
+    pbar = tqdm(total=train_embeddings.shape[0])
+    for train_img, train_label in loader_dict["train_loader"]:
+        img = train_img.to(DEVICE)
+        for cur_img in range(img.shape[0]):
             model.zero_grad()
+            proj, embedding, loss = model.learner.forward(
+                img[cur_img].unsqueeze(0),
+                return_embedding=False,
+                return_projection=False,
+                return_losses=False,
+                return_losses_and_embeddings=True)
             loss.backward()
             for param in model.parameters():
                 if param.grad is not None:
                     train_norms[j] += torch.sum(torch.square(param.grad))
             train_norms[j] = np.sqrt(train_norms[j])
-            # TODO: we can revisit this if time permits
-            #train_grads[j] = embedding[k].grad
             j += 1
-
+            pbar.update(1)
+           
+    pbar.close()
+    
     # Ensure it is zeroed
     model.zero_grad()
 
     # Select
     idx = np.argsort(-train_norms)
 
-    subset = idx[:n_examples]
-    train_imgs_subset_norm = train_imgs[subset]
-    train_labels_subset_norm = train_labels[subset]
+    grad_subset = idx[:n_examples]
+    print("Grad Based Eval:")
+    linear_eval(data_dict, features_dict, grad_subset)
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -391,44 +503,10 @@ def grad_based_ranking(model, data_dict, features_dict, n_examples):
     # subset = idx[:n_examples]
     # train_imgs_subset_angles = train_imgs[subset]
     # train_labels_subset_angles = train_labels[subset]
-    train_imgs_subset_angles = None
-    train_labels_subset_angles = None
-
-
-    return train_imgs_subset_norm, train_labels_subset_norm, train_imgs_subset_angles, train_labels_subset_angles
-
-
-def linear_eval(data_dict, features_dict, train_idx):
-    train_imgs = data_dict['train_imgs']
-    train_labels = data_dict['train_labels']
-    test_imgs = data_dict['test_imgs']
-    test_labels = data_dict['test_labels']
-
-    train_embeddings = data_dict['train_embeddings']
-    test_embeddings = data_dict['test_embeddings']
-
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
-                    train_labels[train_idx])
-
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
-                                                     lr_baseline_preds)
-
-    lr_byol = LogisticRegression(max_iter=100000)
-    lr_byol.fit(train_embeddings[train_idx])
-
-    lr_byol_preds = lr_byol.predict(test_imgs)
-    lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
-
-    print("LR baseline acc: ", lr_baseline_acc)
-    print("LR BYOL acc: ", lr_byol_acc)
 
 
 def main():
-    # TODO: convert to flag
-    ckpt_path = C['STL10_WEIGHTS']
-    model = init_model(ckpt_path=ckpt_path)
+    model = init_model(DATASET)
 
     if os.environ.get('USER') == 'acganesh':
         with open("cache/data_dict.pkl", 'rb') as f:
@@ -437,23 +515,21 @@ def main():
         with open("cache/features_dict.pkl", 'rb') as f:
             features_dict = pickle.load(f)
     else:
-        data_dict = init_data()
-        features_dict = featurize_data(model, data_dict)
+        data_dict, loader_dict = init_data(DATASET)
+        features_dict = featurize_data(model, data_dict, loader_dict)
 
     print("Data and features loaded!")
 
+    # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
         model,
         data_dict,
-        features_dict,
+        loader_dict,
         n_examples=10,
-        num_forward_pass=5,
-        mode='mean')
-    
-    import pdb; pdb.set_trace()
-    grad_based_ranking(model, data_dict, features_dict, n_examples=10)
+        num_forward_pass=5)
+    grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
 
 
 if __name__ == '__main__':
