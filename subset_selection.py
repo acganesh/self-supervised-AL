@@ -538,13 +538,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
             j += 1
             pbar.update(1)
 
-            if (j == 100):
-                break
-
     pbar.close()
-
-    for _ in range(10):
-        print("WE ARE BREAKING EARLY FOR DEBUGGING.  Remove this later.")
 
     # Ensure it is zeroed
     model.zero_grad()
