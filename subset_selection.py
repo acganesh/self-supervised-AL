@@ -35,7 +35,7 @@ from config import config_local, config_cluster
 if os.environ.get('USER') == 'acganesh':
     DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
 else:
-    DATASET = "CIFAR10"
+    DATASET = "STL10"
 
 LR = 3e-4
 NUM_CLASSES = 10
@@ -188,9 +188,9 @@ def init_data(ds_type='STL10'):
                                                   download=False,
                                                   transform=data_transforms)
         train_dataset = torch.utils.data.Subset(train_dataset,
-                                                np.arange(50000))
+                                                np.arange(10000))
         train_loader = DataLoader(train_dataset,
-                                  batch_size=50000,
+                                  batch_size=10000,
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
         train_imgs, train_labels = next(iter(train_loader))
@@ -589,74 +589,84 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
-                       num_examples_list):
+                       num_examples_list, num_forward_pass):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
 
-    train_norms = np.zeros(train_imgs.shape[0])
-
-    # Global img index
-    j = 0
+    
+    grad_sum = np.zeros(train_imgs.shape[0])
+    grad_sum_squared = np.zeros(train_imgs.shape[0])
+    
 
     model.eval()
-    pbar = tqdm(total=train_embeddings.shape[0])
-    for train_img, train_label in loader_dict["train_loader"]:
-        img = train_img.to(DEVICE)
-        for cur_img in range(img.shape[0]):
-            model.zero_grad()
-            proj1, proj2, loss = model.learner.forward(
-                img[cur_img].unsqueeze(0),
-                return_embedding=False,
-                return_projection=False,
-                return_losses=False,
-                return_losses_and_embeddings=True)
-            loss.backward()
-            for param in model.parameters():
-                if param.grad is not None:
-                    train_norms[j] += torch.sum(torch.square(param.grad))
-            train_norms[j] = np.sqrt(train_norms[j])
-            j += 1
-            pbar.update(1)
+    for n in range(num_forward_pass):
+        j = 0 # global img index
+        train_norms = np.zeros(train_imgs.shape[0])
+        pbar = tqdm(total=train_embeddings.shape[0])
+        for train_img, train_label in loader_dict["train_loader"]:
+            img = train_img.to(DEVICE)
+            for cur_img in range(img.shape[0]):
+                model.zero_grad()
+                proj1, proj2, loss = model.learner.forward(
+                    img[cur_img].unsqueeze(0),
+                    return_embedding=False,
+                    return_projection=False,
+                    return_losses=False,
+                    return_losses_and_embeddings=True)
+                loss.backward()
+                for param in model.parameters():
+                    if param.grad is not None:
+                        train_norms[j] += torch.sum(torch.square(param.grad))
+                train_norms[j] = np.sqrt(train_norms[j])
+                j += 1
+                pbar.update(1)
 
-    pbar.close()
+        pbar.close()
+        grad_sum += train_norms
+        grad_sum_squared += np.square(train_norms)
 
     # Ensure it is zeroed
     model.zero_grad()
 
     # Select
+    grad_means = grad_sum / num_forward_pass
+    grad_stds = np.sqrt(grad_sum_squared / num_forward_pass -
+                        np.square(grad_means))
+
     metrics = []
     pr_list = []
     for num_examples in num_examples_list:
-        idx = np.argsort(-train_norms)
-
-        grad_subset = idx[:num_examples]
-        print("Grad Based Eval:")
-
+        ### Mean eval ###
         metadata_dict = {
-            'sampler_type': 'grad_based',
+            'sampler_type': 'grad_based_mean',
             'num_examples': num_examples,
             'ds_type': DATASET
         }
+        idx = np.argsort(-grad_means)
+        mean_subset = idx[:num_examples]
+        print("Mean Loss Eval:")
         metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
-                                            grad_subset, metadata_dict)
+                                            mean_subset, metadata_dict)
         metrics.append(metrics_dict)
         pr_list.append(pr_dict)
+
+        ### Stdev eval ###
+        metadata_dict = {
+            'sampler_type': 'grad_based_std',
+            'num_examples': num_examples,
+            'ds_type': DATASET
+        }
+        idx = np.argsort(-grad_stds)
+        std_subset = idx[:num_examples]
+        print("STD Loss Eval:")
+        metrics_dict, pr_dict = linear_eval(data_dict, features_dict,
+                                            std_subset, metadata_dict)
+        metrics.append(metrics_dict)
+        pr_list.append(pr_dict)
+
     return metrics, pr_list
 
-    # Angle selection
-    # angles = np.zeros(train_imgs.shape[0])
-    # mean_grad = np.mean(train_grads, axis=0)
-    # v_1 = mean_grad / np.linalg.norm(mean_grad)
-
-    # for index in range(train_imgs.shape[0]):
-    #     v_2 = train_grads[index] / np.linalg.norm(train_grads[index])
-    #     angles[index] = np.arccos(np.dot(v_1, v_2))
-
-    # idx = np.argsort(-angles)
-    # subset = idx[:n_examples]
-    # train_imgs_subset_angles = train_imgs[subset]
-    # train_labels_subset_angles = train_labels[subset]
 
 
 def main():
@@ -674,7 +684,9 @@ def main():
 
     print("Data and features loaded!")
 
-    num_examples_list = [5, 10]
+    num_examples_list = 5000 * np.array([0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1])
+    num_examples_list = [int(x) for x in num_examples_list]
+    print("Number examples sampling:", num_examples_list)
 
     metrics_all = []
     pr_all = []
@@ -687,7 +699,7 @@ def main():
 
     metrics, pr = kmeans_sample(data_dict,
                                 features_dict,
-                                num_examples_list=num_examples_list)
+                                num_examples_list=num_examples_list[:-1])
     metrics_all += metrics
     pr_all += pr
 
@@ -696,7 +708,7 @@ def main():
                                          data_dict,
                                          features_dict,
                                          loader_dict,
-                                         num_examples_list=num_examples_list,
+                                         num_examples_list=num_examples_list[:-1],
                                          num_forward_pass=5)
         metrics_all += metrics
         pr_all += pr
@@ -705,7 +717,8 @@ def main():
                                          data_dict,
                                          features_dict,
                                          loader_dict,
-                                         num_examples_list=num_examples_list)
+                                         num_examples_list=num_examples_list[:-1],
+                                         num_forward_pass=5)
         metrics_all += metrics
         pr_all += pr
 
