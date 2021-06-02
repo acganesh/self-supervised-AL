@@ -32,7 +32,7 @@ from config import config_local, config_cluster
 if os.environ.get('USER') == 'acganesh':
     DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
 else:
-    DATASET = "CIFAR1"
+    DATASET = "CIFAR10"
 
 LR = 3e-4
 NUM_WORKERS = multiprocessing.cpu_count(
