@@ -32,7 +32,7 @@ from config import config_local, config_cluster
 if os.environ.get('USER') == 'acganesh':
     DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
 else:
-    DATASET = "CIFAR10"
+    DATASET = "CIFAR1"
 
 LR = 3e-4
 NUM_WORKERS = multiprocessing.cpu_count(
@@ -487,7 +487,7 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
     idx = np.argsort(-loss_means)
     mean_subset = idx[:num_examples]
     print("Mean Loss Eval:")
-    metrics_dict = linear_eval(data_dict, features_dict, mean_subset)
+    metrics_dict = linear_eval(data_dict, features_dict, mean_subset, metadata_dict)
     metrics.append(metrics_dict)
 
     ### Stdev eval ###
