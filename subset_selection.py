@@ -476,21 +476,34 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
     loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
                         np.square(loss_means))
 
-    idx = np.argsort(-loss_means)
-    mean_subset = idx[:num_examples]
-    print("Mean Loss Eval:")
-    linear_eval(data_dict, features_dict, mean_subset)
+    metrics = []
 
-    idx = np.argsort(-loss_stds)
-    std_subset = idx[:num_examples]
-    print("STD Loss Eval:")
-
+    ### Mean eval ###
     metadata_dict = {
-        'sampler_type': 'loss_based',
+        'sampler_type': 'loss_based_mean',
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    return linear_eval(data_dict, features_dict, std_subset, metadata_dict)
+    idx = np.argsort(-loss_means)
+    mean_subset = idx[:num_examples]
+    print("Mean Loss Eval:")
+    metrics_dict = linear_eval(data_dict, features_dict, mean_subset)
+    metrics.append(metrics_dict)
+
+    ### Stdev eval ###
+    metadata_dict = {
+        'sampler_type': 'loss_based_std',
+        'num_examples': num_examples,
+        'ds_type': DATASET
+    }
+    idx = np.argsort(-loss_stds)
+    std_subset = idx[:num_examples]
+    print("STD Loss Eval:")
+    metrics_dict = linear_eval(data_dict, features_dict, std_subset,
+                               metadata_dict)
+    metrics.append(metrics_dict)
+
+    return metrics
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
@@ -536,7 +549,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
     print("Grad Based Eval:")
 
     metadata_dict = {
-        'sampler_type': 'loss_based',
+        'sampler_type': 'grad_based',
         'num_examples': num_examples,
         'ds_type': DATASET
     }
@@ -583,20 +596,19 @@ def main():
         kmeans_sample(data_dict, features_dict, num_examples=num_examples))
 
     if os.environ.get('USER') != 'acganesh':
-        metrics_dict = loss_based_ranking(
-            model,
-            data_dict,
-            features_dict,
-            loader_dict,
-            num_examples=num_examples,
-            num_forward_pass=5)
-        metrics.append(metrics_dict)
+        metrics_loss_based = loss_based_ranking(model,
+                                                data_dict,
+                                                features_dict,
+                                                loader_dict,
+                                                num_examples=num_examples,
+                                                num_forward_pass=5)
+        metrics += metrics_loss_based
 
         metrics_dict = grad_based_ranking(model,
-                        data_dict,
-                        features_dict,
-                        loader_dict,
-                        num_examples=num_examples)
+                                          data_dict,
+                                          features_dict,
+                                          loader_dict,
+                                          num_examples=num_examples)
         metrics.append(metrics_dict)
 
     log_metrics(metrics)
