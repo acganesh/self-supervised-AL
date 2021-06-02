@@ -353,12 +353,21 @@ def compute_metrics(data_dict, prediction_dict):
 
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
+    lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_baseline_scores)
+    #lr_baseline_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_baseline_scores)
+
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
+    lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_byol_scores)
+    #lr_byol_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_byol_scores)
 
     # TODO: need to add to this.
     metrics_dict = {
         'lr_baseline_acc': lr_baseline_acc,
-        'lr_byol_acc': lr_byol_acc
+        'lr_baseline_top3_acc': lr_baseline_top3_acc,
+        #'lr_baseline_average_precision': lr_baseline_average_precision,
+        'lr_byol_acc': lr_byol_acc,
+        'lr_byol_top3_acc': lr_byol_top3_acc,
+        #'lr_byol_average_precision': lr_byol_average_precision
     }
 
     return metrics_dict
@@ -567,7 +576,7 @@ def main():
 
     # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
 
-    num_examples = 10
+    num_examples = 100
     rand_sample(data_dict, features_dict, num_examples=num_examples)
     kmeans_sample(data_dict, features_dict, num_examples=num_examples)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
