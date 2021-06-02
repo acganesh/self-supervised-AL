@@ -487,7 +487,8 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
     idx = np.argsort(-loss_means)
     mean_subset = idx[:num_examples]
     print("Mean Loss Eval:")
-    metrics_dict = linear_eval(data_dict, features_dict, mean_subset, metadata_dict)
+    metrics_dict = linear_eval(data_dict, features_dict, mean_subset,
+                               metadata_dict)
     metrics.append(metrics_dict)
 
     ### Stdev eval ###
@@ -537,7 +538,13 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
             j += 1
             pbar.update(1)
 
+            if (j == 100):
+                break
+
     pbar.close()
+
+    for _ in range(10):
+        print("WE ARE BREAKING EARLY FOR DEBUGGING.  Remove this later.")
 
     # Ensure it is zeroed
     model.zero_grad()
@@ -545,7 +552,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
     # Select
     idx = np.argsort(-train_norms)
 
-    grad_subset = idx[:n_examples]
+    grad_subset = idx[:num_examples]
     print("Grad Based Eval:")
 
     metadata_dict = {
