@@ -29,7 +29,11 @@ from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
-DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
+if os.environ.get('USER') == 'acganesh':
+    DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
+else:
+    DATASET = "CIFAR11"
+
 LR = 3e-4
 NUM_WORKERS = multiprocessing.cpu_count(
 ) if multiprocessing.cpu_count() < 3 else 3
@@ -329,13 +333,13 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     }
 
     metrics_dict = compute_metrics(data_dict, prediction_dict)
+    metrics_dict.update(metadata_dict)
 
     if log:
         print("=" * 80)
         pprint(metrics_dict)
-        pprint(metadata_dict)
 
-    log_metrics(metrics_dict, metadata_dict)
+    return metrics_dict
 
 
 def get_timestamp():
@@ -353,44 +357,38 @@ def compute_metrics(data_dict, prediction_dict):
 
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
-    lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_baseline_scores)
+    #lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_baseline_scores)
     #lr_baseline_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_baseline_scores)
 
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
-    lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_byol_scores)
+    #lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(test_labels, lr_byol_scores)
     #lr_byol_average_precision = sklearn.metrics.average_precision_score(test_labels, lr_byol_scores)
 
     # TODO: need to add to this.
     metrics_dict = {
         'lr_baseline_acc': lr_baseline_acc,
-        'lr_baseline_top3_acc': lr_baseline_top3_acc,
+        #'lr_baseline_top3_acc': lr_baseline_top3_acc,
         #'lr_baseline_average_precision': lr_baseline_average_precision,
         'lr_byol_acc': lr_byol_acc,
-        'lr_byol_top3_acc': lr_byol_top3_acc,
+        #'lr_byol_top3_acc': lr_byol_top3_acc,
         #'lr_byol_average_precision': lr_byol_average_precision
     }
 
     return metrics_dict
 
 
-def log_metrics(metrics_dict, metadata_dict):
-    ds_type = metadata_dict['ds_type']
-    sampler_type = metadata_dict['sampler_type']
-    num_examples = metadata_dict['num_examples']
-
+def log_metrics(metrics):
     timestamp = get_timestamp()
+    ds_type = metrics[0]['ds_type']
 
-    metrics_path = f'./metrics/{timestamp}/'
-    if not os.path.exists(metrics_path):
-        os.makedirs(metrics_path)
-
-    fpath = os.path.join(
-        metrics_path, f'{ds_type}_{sampler_type}_{num_examples}examples.csv')
+    if not os.path.exists('./metrics'):
+        os.mkdir('./metrics')
+    fpath = f'./metrics/{timestamp}_{ds_type}_metrics.csv'
 
     with open(fpath, 'w') as f:
-        dict_writer = csv.DictWriter(f, metrics_dict.keys())
+        dict_writer = csv.DictWriter(f, metrics[0].keys())
         dict_writer.writeheader()
-        dict_writer.writerows([metrics_dict])
+        dict_writer.writerows(metrics)
 
 
 def rand_sample(data_dict, features_dict, num_examples):
@@ -410,7 +408,7 @@ def rand_sample(data_dict, features_dict, num_examples):
         'ds_type': DATASET,
         'num_examples': num_examples
     }
-    linear_eval(data_dict, features_dict, random_idx, metadata_dict)
+    return linear_eval(data_dict, features_dict, random_idx, metadata_dict)
 
 
 def kmeans_sample(data_dict, features_dict, num_examples):
@@ -445,12 +443,12 @@ def kmeans_sample(data_dict, features_dict, num_examples):
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    linear_eval(data_dict, features_dict, kmeans_idx, metadata_dict)
+    return linear_eval(data_dict, features_dict, kmeans_idx, metadata_dict)
 
 
 @torch.no_grad()
-def loss_based_ranking(model, data_dict, features_dict, loader_dict, num_examples,
-                       num_forward_pass):
+def loss_based_ranking(model, data_dict, features_dict, loader_dict,
+                       num_examples, num_forward_pass):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
@@ -492,7 +490,7 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict, num_example
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    linear_eval(data_dict, features_dict, std_subset, metadata_dict)
+    return linear_eval(data_dict, features_dict, std_subset, metadata_dict)
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
@@ -542,7 +540,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
         'num_examples': num_examples,
         'ds_type': DATASET
     }
-    linear_eval(data_dict, features_dict, grad_subset, metadata_dict)
+    return linear_eval(data_dict, features_dict, grad_subset, metadata_dict)
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -576,21 +574,32 @@ def main():
 
     # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
 
-    num_examples = 100
-    rand_sample(data_dict, features_dict, num_examples=num_examples)
-    kmeans_sample(data_dict, features_dict, num_examples=num_examples)
-    train_imgs_subset, train_labels_subset = loss_based_ranking(
+    num_examples = 10
+
+    metrics = []
+    metrics.append(
+        rand_sample(data_dict, features_dict, num_examples=num_examples))
+    metrics.append(
+        kmeans_sample(data_dict, features_dict, num_examples=num_examples))
+    """
+    train_imgs_subset, train_labels_subset, metrics_dict = loss_based_ranking(
         model,
         data_dict,
         features_dict,
         loader_dict,
         num_examples=num_examples,
         num_forward_pass=5)
-    grad_based_ranking(model,
+    metrics.append(metrics_dict)
+
+    metrics_dict = grad_based_ranking(model,
                        data_dict,
                        features_dict,
                        loader_dict,
                        num_examples=num_examples)
+    metrics.append(metrics_dict)
+    """
+
+    log_metrics(metrics)
 
 
 if __name__ == '__main__':
