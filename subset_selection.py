@@ -26,10 +26,12 @@ from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
-DATASET = "SVHN" # or "STL10" or "SVHN" or "CIFAR10"
+DATASET = "SVHN"  # or "STL10" or "SVHN" or "CIFAR10"
 LR = 3e-4
-NUM_WORKERS = multiprocessing.cpu_count() if multiprocessing.cpu_count() < 3 else 3
-IMAGE_SIZE = None # will be populated
+NUM_WORKERS = multiprocessing.cpu_count(
+) if multiprocessing.cpu_count() < 3 else 3
+IMAGE_SIZE = None  # will be populated
+
 
 class ImagePathDataset(torch.utils.data.Dataset):
     def __init__(self, folder):
@@ -43,8 +45,9 @@ class ImagePathDataset(torch.utils.data.Dataset):
             if ext.lower() in ['.jpg', '.png', '.jpeg']:
                 self.paths.append(path)
                 self.labels.append(int(str(path)[-5]))
-        
-        self.transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+
+        self.transform = torchvision.transforms.Compose(
+            [torchvision.transforms.ToTensor()])
 
     def __len__(self):
         return len(self.paths)
@@ -65,6 +68,7 @@ def load_config():
 
 C = load_config()
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 def to_data_dict(train_imgs, train_labels, test_imgs, test_labels):
     data_dict = {
@@ -97,7 +101,7 @@ def get_ckpt_path(model_type):
 def init_model(ds_type='STL10'):
     resnet = torchvision.models.resnet18(pretrained=False)
     if ds_type == 'STL10':
-        IMAGE_SIZE= 96
+        IMAGE_SIZE = 96
         model = SelfSupervisedLearner(resnet,
                                       image_size=IMAGE_SIZE,
                                       hidden_layer='avgpool',
@@ -108,7 +112,7 @@ def init_model(ds_type='STL10'):
                                       lr=LR)
         model.load_state_dict(torch.load(C['STL10_WEIGHTS']))
     elif ds_type == 'SVHN':
-        IMAGE_SIZE= 32
+        IMAGE_SIZE = 32
         model = SelfSupervisedLearner(resnet,
                                       image_size=IMAGE_SIZE,
                                       hidden_layer='avgpool',
@@ -119,7 +123,7 @@ def init_model(ds_type='STL10'):
                                       lr=LR)
         model.load_state_dict(torch.load(C['SVHN_WEIGHTS']))
     elif ds_type == 'CIFAR10':
-        IMAGE_SIZE= 32
+        IMAGE_SIZE = 32
         model = SelfSupervisedLearner(resnet,
                                       image_size=IMAGE_SIZE,
                                       hidden_layer='avgpool',
@@ -129,7 +133,7 @@ def init_model(ds_type='STL10'):
                                       ds_type=ds_type,
                                       lr=LR)
         model.load_state_dict(torch.load(C['CIFAR10_WEIGHTS']))
-                                   
+
     model = model.to(DEVICE)
     print(f"Loaded checkpoint!")
     return model
@@ -172,7 +176,8 @@ def init_data(ds_type='STL10'):
                                                   split='extra',
                                                   download=False,
                                                   transform=data_transforms)
-        train_dataset = torch.utils.data.Subset(train_dataset, np.arange(50000))
+        train_dataset = torch.utils.data.Subset(train_dataset,
+                                                np.arange(50000))
         train_loader = DataLoader(train_dataset,
                                   batch_size=50000,
                                   num_workers=NUM_WORKERS,
@@ -207,7 +212,7 @@ def init_data(ds_type='STL10'):
                                   batch_size=512,
                                   num_workers=NUM_WORKERS,
                                   shuffle=False)
-                                   
+
         test_dataset = ImagePathDataset(C['BIASED_CIFAR10_TEST'])
         test_loader = DataLoader(test_dataset,
                                  batch_size=5500,
@@ -217,7 +222,7 @@ def init_data(ds_type='STL10'):
         test_loader = DataLoader(test_dataset,
                                  batch_size=512,
                                  num_workers=NUM_WORKERS,
-                                 shuffle=False)                                  
+                                 shuffle=False)
 
     data_dict = to_data_dict(train_imgs=train_imgs,
                              train_labels=train_labels,
@@ -228,19 +233,20 @@ def init_data(ds_type='STL10'):
     print("Dataset initialized")
     return data_dict, loader_dict
 
+
 @torch.no_grad()
 def featurize_data(model, data_dict, loader_dict):
     D = data_dict
     train_imgs = torch.flatten(D['train_imgs'], start_dim=1)
     test_imgs = torch.flatten(D['test_imgs'], start_dim=1)
 
-    
     pca = PCA(n_components=512)
     train_projs, test_projs = [], []
     train_embeddings, test_embeddings = [], []
     for train_img, train_label in loader_dict["train_loader"]:
         img = train_img.to(DEVICE)
-        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        cur_projs, cur_embeddings = model.learner.forward(
+            img, return_embedding=True)
         train_projs.append(cur_projs)
         train_embeddings.append(cur_embeddings)
     train_embeddings = torch.cat(train_embeddings, dim=0)
@@ -248,7 +254,8 @@ def featurize_data(model, data_dict, loader_dict):
 
     for test_img, test_label in loader_dict["test_loader"]:
         img = test_img.to(DEVICE)
-        cur_projs, cur_embeddings = model.learner.forward(img, return_embedding=True)
+        cur_projs, cur_embeddings = model.learner.forward(
+            img, return_embedding=True)
         test_projs.append(cur_projs)
         test_embeddings.append(cur_embeddings)
     test_embeddings = torch.cat(test_embeddings, dim=0)
@@ -315,6 +322,7 @@ def linear_eval(data_dict, features_dict, train_idx):
 
     print("LR baseline acc: ", lr_baseline_acc)
     print("LR BYOL acc: ", lr_byol_acc)
+
 
 def rand_sample(data_dict, features_dict):
     train_imgs = data_dict['train_imgs']
@@ -402,6 +410,7 @@ def kmeans_sample(data_dict, features_dict):
 
     return km_acc, lr_baseline_acc
 
+
 @torch.no_grad()
 def loss_based_ranking(model,
                        data_dict,
@@ -423,7 +432,7 @@ def loss_based_ranking(model,
             img = train_img.to(DEVICE)
             losses = model.learner.forward(img, return_losses=True)
             losses_all.append(losses.detach().cpu().numpy())
-                
+
         losses_all = np.concatenate(losses_all)
 
         loss_sum += losses_all
@@ -434,7 +443,6 @@ def loss_based_ranking(model,
     loss_means = loss_sum / num_forward_pass
     loss_stds = np.sqrt(loss_sum_squared / num_forward_pass -
                         np.square(loss_means))
-        
 
     idx = np.argsort(-loss_means)
     mean_subset = idx[:n_examples]
@@ -445,10 +453,10 @@ def loss_based_ranking(model,
     std_subset = idx[:n_examples]
     print("STD Loss Eval:")
     linear_eval(data_dict, features_dict, std_subset)
-    
 
 
-def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples):
+def grad_based_ranking(model, data_dict, features_dict, loader_dict,
+                       n_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
@@ -457,7 +465,7 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples)
 
     # Global img index
     j = 0
-    
+
     model.eval()
     pbar = tqdm(total=train_embeddings.shape[0])
     for train_img, train_label in loader_dict["train_loader"]:
@@ -477,9 +485,9 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples)
             train_norms[j] = np.sqrt(train_norms[j])
             j += 1
             pbar.update(1)
-           
+
     pbar.close()
-    
+
     # Ensure it is zeroed
     model.zero_grad()
 
@@ -511,7 +519,7 @@ def main():
     if os.environ.get('USER') == 'acganesh':
         with open("cache/data_dict.pkl", 'rb') as f:
             data_dict = pickle.load(f)
-        
+
         with open("cache/features_dict.pkl", 'rb') as f:
             features_dict = pickle.load(f)
     else:
@@ -524,12 +532,12 @@ def main():
     rand_sample(data_dict, features_dict)
     kmeans_sample(data_dict, features_dict)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
-        model,
-        data_dict,
-        loader_dict,
-        n_examples=10,
-        num_forward_pass=5)
-    grad_based_ranking(model, data_dict, features_dict, loader_dict, n_examples=10)
+        model, data_dict, loader_dict, n_examples=10, num_forward_pass=5)
+    grad_based_ranking(model,
+                       data_dict,
+                       features_dict,
+                       loader_dict,
+                       n_examples=10)
 
 
 if __name__ == '__main__':
