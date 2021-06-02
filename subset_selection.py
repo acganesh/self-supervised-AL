@@ -507,7 +507,7 @@ def loss_based_ranking(model, data_dict, features_dict, loader_dict,
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
-                       n_examples):
+                       num_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
