@@ -1,8 +1,11 @@
+import csv
+import datetime
 import multiprocessing
 import os
 import pickle
 import random
 import sys
+from pprint import pprint
 
 import numpy as np
 import pytorch_lightning as pl
@@ -26,7 +29,7 @@ from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
-DATASET = "SVHN"  # or "STL10" or "SVHN" or "CIFAR10"
+DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
 LR = 3e-4
 NUM_WORKERS = multiprocessing.cpu_count(
 ) if multiprocessing.cpu_count() < 3 else 3
@@ -297,34 +300,91 @@ def get_predictions(data_dict, features_dict):
     return baseline_preds, baseline_acc, byol_preds, byol_acc
 
 
-def linear_eval(data_dict, features_dict, train_idx):
-    train_imgs = data_dict['train_imgs']
+def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
+    train_imgs = torch.flatten(data_dict['train_imgs'], start_dim=1)
     train_labels = data_dict['train_labels']
+    test_imgs = torch.flatten(data_dict['test_imgs'], start_dim=1)
+    test_labels = data_dict['test_labels']
+
+    train_embeddings = features_dict['train_embeddings'].detach().numpy()
+    test_embeddings = features_dict['test_embeddings'].detach().numpy()
+
+    lr_baseline = LogisticRegression(max_iter=100000)
+    lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
+
+    lr_baseline_scores = lr_baseline.predict_proba(test_imgs)
+    lr_baseline_preds = lr_baseline.predict(test_imgs)
+
+    lr_byol = LogisticRegression(max_iter=100000)
+    lr_byol.fit(train_embeddings[train_idx], train_labels[train_idx])
+
+    lr_byol_scores = lr_byol.predict_proba(test_embeddings)
+    lr_byol_preds = lr_byol.predict(test_embeddings)
+
+    prediction_dict = {
+        'lr_baseline_scores': lr_baseline_scores,
+        'lr_baseline_preds': lr_baseline_preds,
+        'lr_byol_scores': lr_byol_scores,
+        'lr_byol_preds': lr_byol_preds
+    }
+
+    metrics_dict = compute_metrics(data_dict, prediction_dict)
+
+    if log:
+        print("=" * 80)
+        pprint(metrics_dict)
+        pprint(metadata_dict)
+
+    log_metrics(metrics_dict, metadata_dict)
+
+
+def get_timestamp():
+    return datetime.datetime.now().strftime('%m%d%y-%H%M%S')
+
+
+def compute_metrics(data_dict, prediction_dict):
+    lr_baseline_scores = prediction_dict['lr_baseline_scores']
+    lr_baseline_preds = prediction_dict['lr_baseline_preds']
+    lr_byol_preds = prediction_dict['lr_byol_preds']
+    lr_byol_scores = prediction_dict['lr_byol_scores']
+
     test_imgs = data_dict['test_imgs']
     test_labels = data_dict['test_labels']
 
-    train_embeddings = data_dict['train_embeddings']
-    test_embeddings = data_dict['test_embeddings']
-
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[train_idx], start_dim=1),
-                    train_labels[train_idx])
-
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
-
-    lr_byol = LogisticRegression(max_iter=100000)
-    lr_byol.fit(train_embeddings[train_idx])
-
-    lr_byol_preds = lr_byol.predict(test_imgs)
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
 
-    print("LR baseline acc: ", lr_baseline_acc)
-    print("LR BYOL acc: ", lr_byol_acc)
+    # TODO: need to add to this.
+    metrics_dict = {
+        'lr_baseline_acc': lr_baseline_acc,
+        'lr_byol_acc': lr_byol_acc
+    }
+
+    return metrics_dict
 
 
-def rand_sample(data_dict, features_dict):
+def log_metrics(metrics_dict, metadata_dict):
+    ds_type = metadata_dict['ds_type']
+    sampler_type = metadata_dict['sampler_type']
+    num_examples = metadata_dict['num_examples']
+
+    timestamp = get_timestamp()
+
+    metrics_path = f'./metrics/{timestamp}/'
+    if not os.path.exists(metrics_path):
+        os.makedirs(metrics_path)
+
+    fpath = os.path.join(
+        metrics_path, f'{ds_type}_{sampler_type}_{num_examples}examples.csv')
+
+    with open(fpath, 'w') as f:
+        dict_writer = csv.DictWriter(f, metrics_dict.keys())
+        dict_writer.writeheader()
+        dict_writer.writerows([metrics_dict])
+
+
+def rand_sample(data_dict, features_dict, num_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     test_imgs = data_dict['test_imgs']
@@ -332,35 +392,19 @@ def rand_sample(data_dict, features_dict):
     train_embeddings = features_dict['train_embeddings']
     test_embeddings = features_dict['test_embeddings']
 
-    random_idx = np.random.randint(0, high=train_imgs.shape[0], size=30)
+    random_idx = np.random.randint(0,
+                                   high=train_imgs.shape[0],
+                                   size=num_examples)
 
-    embeddings_subset = train_embeddings.detach().cpu().numpy()[random_idx]
-    train_labels_subset = train_labels[random_idx]
-
-    lr_rand = LogisticRegression(max_iter=100000)
-    lr_rand.fit(embeddings_subset, train_labels_subset)
-
-    rand_preds = lr_rand.predict(test_embeddings.detach().cpu().numpy())
-    rand_acc = sklearn.metrics.accuracy_score(test_labels, rand_preds)
-
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[random_idx], start_dim=1),
-                    train_labels_subset)
-
-    lr_baseline_preds = lr_baseline.predict(
-        torch.flatten(test_imgs, start_dim=1))
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
-                                                     lr_baseline_preds)
-
-    # rand_acc: accuracy of train lr on random byol embeddings
-    # lr_baseline_acc: accuracy of training lr on random images
-    print("lr baseline: ", lr_baseline_acc)
-    print("random embeddings: ", rand_acc)
-
-    return rand_acc, lr_baseline
+    metadata_dict = {
+        'sampler_type': 'rand',
+        'ds_type': DATASET,
+        'num_examples': num_examples
+    }
+    linear_eval(data_dict, features_dict, random_idx, metadata_dict)
 
 
-def kmeans_sample(data_dict, features_dict):
+def kmeans_sample(data_dict, features_dict, num_examples):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
     test_imgs = data_dict['test_imgs']
@@ -385,38 +429,19 @@ def kmeans_sample(data_dict, features_dict):
 
     kmeans_idx = random.choices(range(train_imgs.shape[0]),
                                 weights=weights_full,
-                                k=30)
+                                k=num_examples)
 
-    embeddings_subset = train_embeddings.detach().cpu().numpy()[kmeans_idx]
-    train_labels_subset = train_labels[kmeans_idx]
-
-    lr_km = LogisticRegression(max_iter=100000)
-    lr_km.fit(embeddings_subset, train_labels_subset)
-
-    km_preds = lr_km.predict(test_embeddings.detach().cpu().numpy())
-    km_acc = sklearn.metrics.accuracy_score(test_labels, km_preds)
-
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(torch.flatten(train_imgs[kmeans_idx], start_dim=1),
-                    train_labels_subset)
-
-    lr_baseline_preds = lr_baseline.predict(
-        torch.flatten(test_imgs, start_dim=1))
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
-                                                     lr_baseline_preds)
-
-    print("km: ", km_acc)
-    print("lr baseline acc:", lr_baseline_acc)
-
-    return km_acc, lr_baseline_acc
+    metadata_dict = {
+        'sampler_type': 'kmeans',
+        'num_examples': num_examples,
+        'ds_type': DATASET
+    }
+    linear_eval(data_dict, features_dict, kmeans_idx, metadata_dict)
 
 
 @torch.no_grad()
-def loss_based_ranking(model,
-                       data_dict,
-                       loader_dict,
-                       n_examples,
-                       num_forward_pass=5):
+def loss_based_ranking(model, data_dict, loader_dict, num_examples,
+                       num_forward_pass):
     train_imgs = data_dict['train_imgs']
     train_labels = data_dict['train_labels']
 
@@ -445,14 +470,20 @@ def loss_based_ranking(model,
                         np.square(loss_means))
 
     idx = np.argsort(-loss_means)
-    mean_subset = idx[:n_examples]
+    mean_subset = idx[:num_examples]
     print("Mean Loss Eval:")
     linear_eval(data_dict, features_dict, mean_subset)
 
     idx = np.argsort(-loss_stds)
-    std_subset = idx[:n_examples]
+    std_subset = idx[:num_examples]
     print("STD Loss Eval:")
-    linear_eval(data_dict, features_dict, std_subset)
+
+    metadata_dict = {
+        'sampler_type': 'loss_based',
+        'num_examples': num_examples,
+        'ds_type': DATASET
+    }
+    linear_eval(data_dict, features_dict, std_subset, metadata_dict)
 
 
 def grad_based_ranking(model, data_dict, features_dict, loader_dict,
@@ -496,7 +527,13 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
 
     grad_subset = idx[:n_examples]
     print("Grad Based Eval:")
-    linear_eval(data_dict, features_dict, grad_subset)
+
+    metadata_dict = {
+        'sampler_type': 'loss_based',
+        'num_examples': num_examples,
+        'ds_type': DATASET
+    }
+    linear_eval(data_dict, features_dict, grad_subset, metadata_dict)
 
     # Angle selection
     # angles = np.zeros(train_imgs.shape[0])
@@ -529,15 +566,21 @@ def main():
     print("Data and features loaded!")
 
     # TODO: AVERAGE ACROSS ACCS ACROSS N RUNS?
-    rand_sample(data_dict, features_dict)
-    kmeans_sample(data_dict, features_dict)
+
+    num_examples = 10
+    rand_sample(data_dict, features_dict, num_examples=num_examples)
+    kmeans_sample(data_dict, features_dict, num_examples=num_examples)
     train_imgs_subset, train_labels_subset = loss_based_ranking(
-        model, data_dict, loader_dict, n_examples=10, num_forward_pass=5)
+        model,
+        data_dict,
+        loader_dict,
+        num_examples=num_examples,
+        num_forward_pass=5)
     grad_based_ranking(model,
                        data_dict,
                        features_dict,
                        loader_dict,
-                       n_examples=10)
+                       num_examples=num_examples)
 
 
 if __name__ == '__main__':
