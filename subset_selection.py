@@ -32,6 +32,8 @@ from src.models.model import SelfSupervisedLearner
 
 from config import config_local, config_cluster
 
+RUN_BASELINE = False
+
 if os.environ.get('USER') == 'acganesh':
     DATASET = "STL10"  # or "STL10" or "SVHN" or "CIFAR10"
 else:
@@ -317,16 +319,17 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     train_embeddings = features_dict['train_embeddings'].detach().cpu().numpy()
     test_embeddings = features_dict['test_embeddings'].detach().cpu().numpy()
 
-    lr_baseline = LogisticRegression(max_iter=100000)
-    lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
+    if RUN_BASELINE:
+        lr_baseline = LogisticRegression(max_iter=100000)
+        lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
 
-    lr_baseline_scores = lr_baseline.predict_proba(test_imgs)
+        lr_baseline_scores = lr_baseline.predict_proba(test_imgs)
 
-    if lr_baseline_scores.shape[1] != NUM_CLASSES:
-        lr_baseline_scores = insert_zeros(lr_baseline_scores,
-                                          lr_baseline.classes_)
+        if lr_baseline_scores.shape[1] != NUM_CLASSES:
+            lr_baseline_scores = insert_zeros(lr_baseline_scores,
+                                              lr_baseline.classes_)
 
-    lr_baseline_preds = lr_baseline.predict(test_imgs)
+        lr_baseline_preds = lr_baseline.predict(test_imgs)
 
     lr_byol = LogisticRegression(max_iter=100000)
     lr_byol.fit(train_embeddings[train_idx], train_labels[train_idx])
@@ -334,16 +337,18 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     lr_byol_scores = lr_byol.predict_proba(test_embeddings)
 
     if lr_byol_scores.shape[1] != NUM_CLASSES:
-        lr_byol_scores = insert_zeros(lr_byol_scores, lr_baseline.classes_)
+        lr_byol_scores = insert_zeros(lr_byol_scores, lr_byol.classes_)
 
     lr_byol_preds = lr_byol.predict(test_embeddings)
 
     prediction_dict = {
-        'lr_baseline_scores': lr_baseline_scores,
-        'lr_baseline_preds': lr_baseline_preds,
         'lr_byol_scores': lr_byol_scores,
         'lr_byol_preds': lr_byol_preds
     }
+
+    if RUN_BASELINE:
+        prediction_dict['lr_baseline_scores'] = lr_baseline_scores
+        prediction_dict['lr_baseline_preds'] = lr_baseline_preds
 
     metrics_dict, pr_dict = compute_metrics(data_dict, prediction_dict)
     metrics_dict.update(metadata_dict)
@@ -393,36 +398,41 @@ def insert_zeros(scores, mapping):
 
 
 def compute_metrics(data_dict, prediction_dict):
-    lr_baseline_scores = prediction_dict['lr_baseline_scores']
-    lr_baseline_preds = prediction_dict['lr_baseline_preds']
+    if RUN_BASELINE:
+        lr_baseline_scores = prediction_dict['lr_baseline_scores']
+        lr_baseline_preds = prediction_dict['lr_baseline_preds']
+
+        lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
+                                                        lr_baseline_preds)
+
+        lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(
+            test_labels, lr_baseline_scores)
+        lr_baselise_pr_dict = multi_class_pr(test_labels, lr_baseline_scores)
+
+        lr_baseline_pr = multi_class_pr(test_labels, lr_baseline_scores)
+
     lr_byol_preds = prediction_dict['lr_byol_preds']
     lr_byol_scores = prediction_dict['lr_byol_scores']
 
     test_imgs = data_dict['test_imgs']
     test_labels = data_dict['test_labels']
-
-    lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
-                                                     lr_baseline_preds)
-
-    lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(
-        test_labels, lr_baseline_scores)
-    lr_baselise_pr_dict = multi_class_pr(test_labels, lr_baseline_scores)
-
-    lr_baseline_pr = multi_class_pr(test_labels, lr_baseline_scores)
-
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
     lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(
         test_labels, lr_byol_scores)
     lr_byol_pr = multi_class_pr(test_labels, lr_byol_scores)
 
     metrics_dict = {
-        'lr_baseline_acc': lr_baseline_acc,
-        'lr_baseline_top3_acc': lr_baseline_top3_acc,
         'lr_byol_acc': lr_byol_acc,
         'lr_byol_top3_acc': lr_byol_top3_acc,
     }
 
-    pr_dict = {'lr_baseline_pr': lr_baseline_pr, 'lr_byol_pr': lr_byol_pr}
+    if RUN_BASELINE:
+        metrics_dict['lr_baseline_acc'] = lr_baseline_acc
+        metrics_dict['lr_baseline_top3_acc'] = lr_baseline_top3_acc,
+
+        pr_dict['lr_baseline_pr'] = lr_baseline_pr
+
+    pr_dict = {'lr_byol_pr': lr_byol_pr}
 
     return metrics_dict, pr_dict
 
@@ -511,7 +521,7 @@ def kmeans_sample(data_dict, features_dict, num_examples_list):
     pr_list = []
     for num_examples in num_examples_list:
         kmeans_idx = np.random.choice(a=range(train_imgs.shape[0]),
-                                      size=(num_examples,),
+                                      size=(num_examples, ),
                                       p=weights_full,
                                       replace=False)
 
@@ -597,14 +607,12 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
     train_labels = data_dict['train_labels']
     train_embeddings = features_dict['train_embeddings']
 
-    
     grad_sum = np.zeros(train_imgs.shape[0])
     grad_sum_squared = np.zeros(train_imgs.shape[0])
-    
 
     model.eval()
     for n in range(num_forward_pass):
-        j = 0 # global img index
+        j = 0  # global img index
         train_norms = np.zeros(train_imgs.shape[0])
         pbar = tqdm(total=train_embeddings.shape[0])
         for train_img, train_label in loader_dict["train_loader"]:
@@ -671,7 +679,6 @@ def grad_based_ranking(model, data_dict, features_dict, loader_dict,
     return metrics, pr_list
 
 
-
 def main():
     model = init_model(DATASET)
 
@@ -687,7 +694,9 @@ def main():
 
     print("Data and features loaded!")
 
-    num_examples_list = 5000 * np.array([0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1])
+    num_examples_list = 5000 * np.array([
+        0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1
+    ])
     num_examples_list = [int(x) for x in num_examples_list]
     print("Number examples sampling:", num_examples_list)
 
@@ -707,21 +716,23 @@ def main():
     pr_all += pr
 
     if os.environ.get('USER') != 'acganesh':
-        metrics, pr = loss_based_ranking(model,
-                                         data_dict,
-                                         features_dict,
-                                         loader_dict,
-                                         num_examples_list=num_examples_list[:-1],
-                                         num_forward_pass=5)
+        metrics, pr = loss_based_ranking(
+            model,
+            data_dict,
+            features_dict,
+            loader_dict,
+            num_examples_list=num_examples_list[:-1],
+            num_forward_pass=5)
         metrics_all += metrics
         pr_all += pr
 
-        metrics, pr = grad_based_ranking(model,
-                                         data_dict,
-                                         features_dict,
-                                         loader_dict,
-                                         num_examples_list=num_examples_list[:-1],
-                                         num_forward_pass=5)
+        metrics, pr = grad_based_ranking(
+            model,
+            data_dict,
+            features_dict,
+            loader_dict,
+            num_examples_list=num_examples_list[:-1],
+            num_forward_pass=5)
         metrics_all += metrics
         pr_all += pr
 
