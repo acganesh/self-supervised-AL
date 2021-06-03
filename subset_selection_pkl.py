@@ -317,6 +317,7 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     train_embeddings = features_dict['train_embeddings'].detach().cpu().numpy()
     test_embeddings = features_dict['test_embeddings'].detach().cpu().numpy()
 
+    """
     lr_baseline = LogisticRegression(max_iter=100000)
     lr_baseline.fit(train_imgs[train_idx], train_labels[train_idx])
 
@@ -327,6 +328,7 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
                                           lr_baseline.classes_)
 
     lr_baseline_preds = lr_baseline.predict(test_imgs)
+    """
 
     lr_byol = LogisticRegression(max_iter=100000)
     lr_byol.fit(train_embeddings[train_idx], train_labels[train_idx])
@@ -334,13 +336,13 @@ def linear_eval(data_dict, features_dict, train_idx, metadata_dict, log=True):
     lr_byol_scores = lr_byol.predict_proba(test_embeddings)
 
     if lr_byol_scores.shape[1] != NUM_CLASSES:
-        lr_byol_scores = insert_zeros(lr_byol_scores, lr_baseline.classes_)
+        lr_byol_scores = insert_zeros(lr_byol_scores, lr_byol.classes_)
 
     lr_byol_preds = lr_byol.predict(test_embeddings)
 
     prediction_dict = {
-        'lr_baseline_scores': lr_baseline_scores,
-        'lr_baseline_preds': lr_baseline_preds,
+        #'lr_baseline_scores': lr_baseline_scores,
+        #'lr_baseline_preds': lr_baseline_preds,
         'lr_byol_scores': lr_byol_scores,
         'lr_byol_preds': lr_byol_preds
     }
@@ -393,22 +395,23 @@ def insert_zeros(scores, mapping):
 
 
 def compute_metrics(data_dict, prediction_dict):
-    lr_baseline_scores = prediction_dict['lr_baseline_scores']
-    lr_baseline_preds = prediction_dict['lr_baseline_preds']
+    #lr_baseline_scores = prediction_dict['lr_baseline_scores']
+    #lr_baseline_preds = prediction_dict['lr_baseline_preds']
     lr_byol_preds = prediction_dict['lr_byol_preds']
     lr_byol_scores = prediction_dict['lr_byol_scores']
 
     test_imgs = data_dict['test_imgs']
     test_labels = data_dict['test_labels']
 
+    """
     lr_baseline_acc = sklearn.metrics.accuracy_score(test_labels,
                                                      lr_baseline_preds)
 
     lr_baseline_top3_acc = sklearn.metrics.top_k_accuracy_score(
         test_labels, lr_baseline_scores)
     lr_baselise_pr_dict = multi_class_pr(test_labels, lr_baseline_scores)
-
     lr_baseline_pr = multi_class_pr(test_labels, lr_baseline_scores)
+    """
 
     lr_byol_acc = sklearn.metrics.accuracy_score(test_labels, lr_byol_preds)
     lr_byol_top3_acc = sklearn.metrics.top_k_accuracy_score(
@@ -416,13 +419,13 @@ def compute_metrics(data_dict, prediction_dict):
     lr_byol_pr = multi_class_pr(test_labels, lr_byol_scores)
 
     metrics_dict = {
-        'lr_baseline_acc': lr_baseline_acc,
-        'lr_baseline_top3_acc': lr_baseline_top3_acc,
+        #'lr_baseline_acc': lr_baseline_acc,
+        #'lr_baseline_top3_acc': lr_baseline_top3_acc,
         'lr_byol_acc': lr_byol_acc,
         'lr_byol_top3_acc': lr_byol_top3_acc,
     }
 
-    pr_dict = {'lr_baseline_pr': lr_baseline_pr, 'lr_byol_pr': lr_byol_pr}
+    pr_dict = {'lr_byol_pr': lr_byol_pr}
 
     return metrics_dict, pr_dict
 
