@@ -703,17 +703,20 @@ def main():
     metrics_all = []
     pr_all = []
 
-    metrics, pr = rand_sample(data_dict,
-                              features_dict,
-                              num_examples_list=num_examples_list)
-    metrics_all += metrics
-    pr_all += pr
+    NUM_TRIALS = 5
 
-    metrics, pr = kmeans_sample(data_dict,
+    for _ in range(NUM_TRIALS):
+        metrics, pr = rand_sample(data_dict,
                                 features_dict,
-                                num_examples_list=num_examples_list[:-1])
-    metrics_all += metrics
-    pr_all += pr
+                                num_examples_list=num_examples_list)
+        metrics_all += metrics
+        pr_all += pr
+
+        metrics, pr = kmeans_sample(data_dict,
+                                    features_dict,
+                                    num_examples_list=num_examples_list[:-1])
+        metrics_all += metrics
+        pr_all += pr
 
     if os.environ.get('USER') != 'acganesh':
         metrics, pr = loss_based_ranking(
