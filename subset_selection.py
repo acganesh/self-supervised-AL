@@ -704,7 +704,7 @@ def main():
     #     0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1
     # ])
     # num_examples_list = [int(x) for x in num_examples_list]
-    num_examples_list = list(range(1, 101))
+    num_examples_list = list(range(2, 101))
     print("Number examples sampling:", num_examples_list)
 
     metrics_all = []
