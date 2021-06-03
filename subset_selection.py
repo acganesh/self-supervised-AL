@@ -468,7 +468,8 @@ def rand_sample(data_dict, features_dict, num_examples_list):
     for num_examples in num_examples_list:
         random_idx = np.random.randint(0,
                                        high=train_imgs.shape[0],
-                                       size=num_examples)
+                                       size=num_examples,
+                                       replace=False)
         metadata_dict = {
             'sampler_type': 'rand',
             'ds_type': DATASET,
@@ -508,9 +509,10 @@ def kmeans_sample(data_dict, features_dict, num_examples_list):
     metrics = []
     pr_list = []
     for num_examples in num_examples_list:
-        kmeans_idx = random.choices(range(train_imgs.shape[0]),
-                                    weights=weights_full,
-                                    k=num_examples)
+        kmeans_idx = np.random.choice(a=range(train_imgs.shape[0]),
+                                      size=(num_examples,),
+                                      p=weights_full,
+                                      replace=False)
 
         metadata_dict = {
             'sampler_type': 'kmeans',
