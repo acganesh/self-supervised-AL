@@ -39,6 +39,7 @@ if os.environ.get('USER') == 'acganesh':
 else:
     DATASET = "STL10"
 
+NUM_FINETUNE = None
 LR = 3e-4
 NUM_CLASSES = 10
 NUM_WORKERS = multiprocessing.cpu_count(
@@ -184,6 +185,8 @@ def init_data(ds_type='STL10'):
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
 
+        NUM_FINETUNE = 5000 
+
     elif ds_type == 'SVHN':
         train_dataset = torchvision.datasets.SVHN(C['SVHN_EXTRA'],
                                                   split='extra',
@@ -214,6 +217,8 @@ def init_data(ds_type='STL10'):
                                  batch_size=512,
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
+        NUM_FINETUNE = 10000
+
     elif ds_type == 'CIFAR10':
         train_dataset = ImagePathDataset(C['BIASED_CIFAR10_TRAIN'])
         train_loader = DataLoader(train_dataset,
@@ -236,6 +241,7 @@ def init_data(ds_type='STL10'):
                                  batch_size=512,
                                  num_workers=NUM_WORKERS,
                                  shuffle=False)
+        NUM_FINETUNE = 2750
 
     data_dict = to_data_dict(train_imgs=train_imgs,
                              train_labels=train_labels,
@@ -694,10 +700,11 @@ def main():
 
     print("Data and features loaded!")
 
-    num_examples_list = 5000 * np.array([
-        0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1
-    ])
-    num_examples_list = [int(x) for x in num_examples_list]
+    # num_examples_list = NUM_FINETUNE * np.array([
+    #     0.0025, 0.005, 0.0075, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.5, 0.75, 1
+    # ])
+    # num_examples_list = [int(x) for x in num_examples_list]
+    num_examples_list = list(range(1, 101))
     print("Number examples sampling:", num_examples_list)
 
     metrics_all = []
