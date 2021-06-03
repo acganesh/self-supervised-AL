@@ -466,10 +466,10 @@ def rand_sample(data_dict, features_dict, num_examples_list):
     metrics = []
     pr_list = []
     for num_examples in num_examples_list:
-        random_idx = np.random.randint(0,
-                                       high=train_imgs.shape[0],
-                                       size=num_examples,
-                                       replace=False)
+        random_idx = np.random.choice(train_imgs.shape[0],
+                                      size=num_examples,
+                                      replace=False)
+
         metadata_dict = {
             'sampler_type': 'rand',
             'ds_type': DATASET,
