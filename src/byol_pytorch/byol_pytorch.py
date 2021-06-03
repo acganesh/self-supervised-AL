@@ -203,6 +203,8 @@ class BYOL(nn.Module):
             norm_aug = T.Normalize(mean=torch.tensor([0.490, 0.479, 0.442]),
                         std=torch.tensor([0.247, 0.244, 0.260]))
 
+        self.norm = T.Compose([norm_aug])
+
         DEFAULT_AUG = torch.nn.Sequential(
             RandomApply(T.ColorJitter(0.8, 0.8, 0.8, 0.2), p=0.3),
             T.RandomGrayscale(p=0.2),
@@ -253,7 +255,8 @@ class BYOL(nn.Module):
     def forward(self, x, return_embedding=False, return_projection=True, return_losses=False, return_losses_and_embeddings=False):
 
         if return_embedding:
-            return self.online_encoder(x, return_projection=return_projection)
+            y = self.norm(x)
+            return self.online_encoder(y, return_projection=return_projection)
 
         image_one, image_two = self.augment1(x), self.augment2(x)
 
