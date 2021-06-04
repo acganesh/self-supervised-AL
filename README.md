@@ -4,6 +4,7 @@ Self supervised learning + optimal labeling
 ## Directory Structure
     .
     ├── src/                    # Contains scripts and jupyter notebooks for BYOL model and data exploration
+    ├── cifar_scripts/          # Contains scripts for synthetic CIFAR construction
     ├── .gitignore
     ├── README.md
     ├── config.py               # Various configurations needed for subset selection
