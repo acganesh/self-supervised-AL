@@ -7,7 +7,7 @@ Self supervised learning + optimal labeling
     ├── .gitignore
     ├── README.md
     ├── config.py               # Various configurations needed for subset selection
-    ├── subset_selection.py  # Runs various subset selection methods for fixed BYOL embeddings
+    ├── subset_selection.py   # Runs various subset selection methods for fixed BYOL embeddings
     └── train.py                # Runs training for BYOL
 
 ### Author Contact:
