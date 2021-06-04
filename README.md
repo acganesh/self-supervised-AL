@@ -1,5 +1,5 @@
 # self-supervised-AL
-Self supervised learning + active labeling
+Self supervised learning + active learning
 
 ## Directory Structure
     .
