@@ -140,3 +140,5 @@ cache/
 metrics/
 
 .DS_Store
+
+pickles/
