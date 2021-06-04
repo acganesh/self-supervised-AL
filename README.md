@@ -1,4 +1,4 @@
-# semi-supervised
+# self-supervised-AL
 Self supervised learning + active labeling
 
 ## Directory Structure
