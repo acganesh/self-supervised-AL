@@ -1,5 +1,5 @@
 # semi-supervised
-Self supervised learning + optimal labeling
+Self supervised learning + active labeling
 
 ## Directory Structure
     .
